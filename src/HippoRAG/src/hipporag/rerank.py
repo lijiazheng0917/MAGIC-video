@@ -51,6 +51,15 @@ class DSPyFilter:
         return message_template
 
     def parse_filter(self, response):
+        if not isinstance(response, str):
+            if response is None:
+                return []
+            elif isinstance(response, list):
+                response = response[0] if response else ""
+            elif isinstance(response, dict):
+                response = str(response)
+            else:
+                response = str(response)
         sections = [(None, [])]
         field_header_pattern = re.compile('\\[\\[ ## (\\w+) ## \\]\\]')
         for line in response.splitlines():
@@ -91,9 +100,15 @@ class DSPyFilter:
 
         response = self.llm_model.generate(messages)
 
-        if len(response) > 1:
-            return response[0]
-        return response
+        if isinstance(response, str):
+            return response
+        elif response is None:
+            return ""
+        elif isinstance(response, list):
+            return response[0] if response else ""
+        elif isinstance(response, dict):
+            return str(response)
+        return str(response)
 
     def __call__(self, *args, **kwargs):
         return self.rerank(*args, **kwargs)

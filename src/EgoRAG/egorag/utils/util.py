@@ -7,7 +7,22 @@ import yaml
 
 from worldmm.llm import LLMModel
 
-model = LLMModel(model_name="gpt-5-mini")
+model = LLMModel(model_name=os.getenv("TRANSLATION_MODEL", "openai/gpt-oss-120b"))
+
+
+def _is_auth_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    auth_markers = [
+        "invalid api key",
+        "incorrect api key",
+        "authentication",
+        "unauthorized",
+        "401",
+        "forbidden",
+        "403",
+        "api key",
+    ]
+    return any(marker in message for marker in auth_markers)
 
 
 def call_gpt(
@@ -31,19 +46,35 @@ def call_gpt(
     Returns:
         Optional[str]: The response content from GPT-4, or None if request fails after retries
     """
-    openai_key = os.getenv("OPENAI_API_KEY")
+    provider = getattr(model, "provider", "openai")
 
-    if openai_key:
+    generation_kwargs = {}
+    if provider == "openrouter":
+        generation_kwargs["max_tokens"] = max_tokens * 2
+    else:
+        generation_kwargs["max_output_tokens"] = max_tokens * 2
+
+    try:
         response = model.generate(
             [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt}
             ],
-            max_output_tokens=max_tokens*2  # For reasoning tokens
+            **generation_kwargs
         )
         return response
-    else:
-        raise ValueError("Standard OpenAI credentials are not properly configured (Azure OpenAI not supported).")
+    except Exception as exc:
+        if provider == "openrouter" and _is_auth_error(exc) and not os.getenv("OPENROUTER_API_KEY"):
+            raise ValueError(
+                "OpenRouter credentials are not properly configured. Set OPENROUTER_API_KEY."
+            ) from exc
+
+        if provider == "openai" and _is_auth_error(exc) and not os.getenv("OPENAI_API_KEY"):
+            raise ValueError(
+                "Standard OpenAI credentials are not properly configured (Azure OpenAI not supported)."
+            ) from exc
+
+        raise
 
 def time_to_frame_idx(time_int: int, fps: int) -> int:
     """

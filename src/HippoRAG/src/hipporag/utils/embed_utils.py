@@ -35,14 +35,8 @@ def retrieve_knn(query_ids: List[str], key_ids: List[str], query_vecs, key_vecs,
     d = key_vecs.shape[1]  # dimension
     k = min(k, len(key_vecs))  # can't retrieve more than we have
 
-    # Use GPU if available, otherwise CPU
-    if faiss.get_num_gpus() > 0:
-        # GPU index for faster search
-        res = faiss.StandardGpuResources()
-        index = faiss.GpuIndexFlatIP(res, d)
-    else:
-        # CPU index
-        index = faiss.IndexFlatIP(d)
+    # Use CPU index to avoid GPU memory conflicts with the embedding model
+    index = faiss.IndexFlatIP(d)
 
     # Add key vectors to the index
     index.add(key_vecs)

@@ -26,17 +26,29 @@ class VideoClipEntry:
     end_time: str
     date: str
     embedding: Optional[np.ndarray] = None  # Precomputed embedding
-    
+    start_sec: Optional[float] = None  # Float seconds (Video-MME/LVBench/MM-Lifelong)
+    end_sec: Optional[float] = None
+
     @property
     def timestamp_int(self) -> Tuple[int, int]:
-        """Convert start and end times to integer format (day + time.zfill(8))."""
+        """Convert start and end times to integer/float format.
+
+        For EgoLife: returns int DHHMMSSFF (day + time.zfill(8)).
+        For Video-MME/LVBench/MM-Lifelong: returns float seconds.
+        """
+        # Float-seconds path (Video-MME, LVBench, MM-Lifelong)
+        if self.start_sec is not None and self.end_sec is not None:
+            return self.start_sec, self.end_sec
+        # EgoLife path (DHHMMSSFF)
         day = self.date.replace('DAY', '').replace('Day', '')
         start_ts = int(day + self.start_time.zfill(8))
         end_ts = int(day + self.end_time.zfill(8))
         return start_ts, end_ts
-    
+
     def to_display_str(self) -> str:
         """Format video clip for display with time range."""
+        if self.start_sec is not None and self.end_sec is not None:
+            return f"[{self.start_sec:.0f}s - {self.end_sec:.0f}s]"
         start_ts, end_ts = self.timestamp_int
         return f"{_transform_timestamp(str(start_ts))} - {_transform_timestamp(str(end_ts))}"
 
@@ -196,17 +208,29 @@ class VisualMemory:
     def load_clips_from_data(self, data: List[Dict[str, Any]]) -> None:
         """
         Load video clip metadata from in-memory data.
-        
-        Args:
-            data: List of dicts with keys: start_time, end_time, date, video_path, text (optional)
+
+        Supports two formats:
+          - EgoLife: keys start_time, end_time, date, video_path
+          - Video-MME/LVBench/MM-Lifelong: keys start_sec, end_sec, video_path
         """
+        matched = 0
         for idx, entry in enumerate(data):
             clip_id = f"visual_{idx}"
             video_path = entry.get("video_path", "")
-            
-            # Get precomputed embedding if available
-            embedding = self.video_path_to_embedding.get(video_path)
-            
+            start_sec = entry.get("start_sec")
+            end_sec = entry.get("end_sec")
+
+            # Try embedding key: "video_path:start-end" (Video-MME/LVBench/MM-Lifelong)
+            embedding = None
+            if start_sec is not None and end_sec is not None:
+                emb_key = f"{video_path}:{start_sec}-{end_sec}"
+                embedding = self.video_path_to_embedding.get(emb_key)
+            # Fallback: try plain video_path (EgoLife)
+            if embedding is None:
+                embedding = self.video_path_to_embedding.get(video_path)
+            if embedding is not None:
+                matched += 1
+
             clip_entry = VideoClipEntry(
                 id=clip_id,
                 video_path=video_path,
@@ -214,13 +238,15 @@ class VisualMemory:
                 end_time=str(entry.get("end_time", "")),
                 date=entry.get("date", ""),
                 embedding=embedding,
+                start_sec=start_sec,
+                end_sec=end_sec,
             )
             self.clips.append(clip_entry)
             self.clip_id_to_entry[clip_id] = clip_entry
-        
+
         # Sort clips by timestamp for efficient indexing
         self.clips.sort(key=lambda c: c.timestamp_int[0])
-        logger.info(f"Loaded {len(self.clips)} video clips")
+        logger.info(f"Loaded {len(self.clips)} video clips ({matched} with embeddings)")
     
     def index(self, until_time: int) -> None:
         """

@@ -172,3 +172,52 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+# ===== Project-specific (WorldMM_jz) =====
+# Data / outputs / logs (large, not for git)
+data
+data/
+output/
+logs/
+.log/
+slurm_log/
+assets/
+
+# Eval results (keep scripts, drop bulk results)
+baselines/baselines/
+baselines/scripts/logs/
+baselines/eval/*/results*.json
+
+# Stray files
+openie_results_*.json
+
+# Claude Code session state
+.claude/
+
+# Model / embedding caches
+*.pkl
+*.pickle
+*.sqlite3
+*.bin
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Unused datasets (not my work)
+script_videomme/
+script_lvbench/
+preprocess/videomme/
+preprocess/lvbench/
+eval/eval_videomme.py
+eval/eval_lvbench.py
+src/worldmm/llm/templates/memory_reasoning_videomme.py
+src/worldmm/llm/templates/memory_reasoning_unified_v2_videomme.py
+src/worldmm/llm/templates/memory_reasoning_lvbench.py
+src/worldmm/llm/templates/memory_reasoning_unified_v2_lvbench.py
+ideas/
+baselines/results.md
+baselines/scripts/*.sh
+
+# Personal HPC SLURM wrappers (use README commands instead)
+script/
+script_mmlifelong/
+preprocess/visualize_graph.py

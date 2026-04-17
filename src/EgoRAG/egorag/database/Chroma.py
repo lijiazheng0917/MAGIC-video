@@ -40,7 +40,20 @@ class Chroma(ABC):
         self.db_path = os.path.join(self.db_dir, self.name)
         # Initialize client
         self._client = chromadb.PersistentClient(path=self.db_path)
-        self.embedding_function = OpenCLIPEmbeddingFunction()
+        requested_device = os.getenv("CHROMA_EMBEDDING_DEVICE", "auto").lower()
+        if requested_device == "auto":
+            embedding_device = "cuda" if torch.cuda.is_available() else "cpu"
+        elif requested_device in {"cuda", "cpu"}:
+            embedding_device = requested_device
+        else:
+            embedding_device = "cpu"
+
+        if embedding_device == "cuda" and not torch.cuda.is_available():
+            print("CUDA requested for embeddings, but no CUDA device is available. Falling back to CPU.")
+            embedding_device = "cpu"
+
+        self.embedding_function = OpenCLIPEmbeddingFunction(device=embedding_device)
+        print(f"OpenCLIP embedding device: {embedding_device}")
 
         # Get or create collection
         try:

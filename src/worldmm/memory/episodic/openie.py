@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 import logging
 
-from .utils import compute_mdhash_id, filter_invalid_triples, NerRawOutput, TripleRawOutput, NerOutput, TripleOutput
+from .utils import compute_mdhash_id, filter_invalid_triples, NerRawOutput, TripleRawOutput, CombinedOpenIERawOutput, NerOutput, TripleOutput
 from ...llm import dynamic_retry_decorator, LLMModel, PromptTemplateManager
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,30 @@ class OpenIE:
             triples=triplets
         )
     
+    @dynamic_retry_decorator
+    def _execute_combined_call(self, messages) -> CombinedOpenIERawOutput:
+        """Retryable helper that runs combined NER + triple extraction in one call."""
+        response = self.llm_model.generate(messages, text_format=CombinedOpenIERawOutput)
+        return response
+
+    def combined_openie(self, chunk_key: str, passage: str) -> Tuple[NerOutput, TripleOutput]:
+        """Run NER + triple extraction in a single LLM call."""
+        messages = self.prompt_template_manager.render(name='combined_openie', passage=passage)
+        metadata = {}
+        try:
+            result = self._execute_combined_call(messages)
+            unique_entities = result.named_entities
+            triples = filter_invalid_triples(result.triples)
+        except Exception as e:
+            logger.warning(f"Combined OpenIE failed for chunk {chunk_key}: {e}")
+            metadata.update({'error': str(e)})
+            unique_entities = []
+            triples = []
+
+        ner_output = NerOutput(chunk_id=chunk_key, unique_entities=unique_entities, metadata=metadata)
+        triple_output = TripleOutput(chunk_id=chunk_key, triples=triples, metadata=metadata)
+        return ner_output, triple_output
+
     def save_results(self, results: Dict[str, Any], output_dir: str = "."):
         """
         Save OpenIE results to a JSON file.
@@ -98,11 +122,12 @@ class OpenIE:
             else:
                 json_results[key] = value
         
+        safe_model_name = self.llm_model.model_name.replace("/", "_")
         os.makedirs(output_dir, exist_ok=True)
-        with open(os.path.join(output_dir, f"openie_results_{self.llm_model.model_name}.json"), 'w', encoding='utf-8') as f:
+        with open(os.path.join(output_dir, f"openie_results_{safe_model_name}.json"), 'w', encoding='utf-8') as f:
             json.dump(json_results, f, indent=2, ensure_ascii=False)
         
-        logger.info(f"Results saved to {output_dir}/openie_results_{self.llm_model.model_name}.json")
+        logger.info(f"Results saved to {output_dir}/openie_results_{safe_model_name}.json")
 
     def openie(self, passage: str) -> Dict[str, Any]:
         chunk_key = compute_mdhash_id(passage, prefix="chunk-")
@@ -110,13 +135,15 @@ class OpenIE:
         triple_output = self.triple_extraction(chunk_key=chunk_key, passage=passage, named_entities=ner_output.unique_entities)
         return {"ner": ner_output.unique_entities, "triplets": triple_output.triples}
 
-    def batch_openie(self, chunks: Union[List[str], Dict[str, Any]], output_dir: str = ".") -> Tuple[Dict[str, List[str]], Dict[str, List[List[str]]]]:
+    def batch_openie(self, chunks: Union[List[str], Dict[str, Any]], output_dir: str = ".", combined: bool = False) -> Tuple[Dict[str, List[str]], Dict[str, List[List[str]]]]:
         """
         Conduct batch OpenIE synchronously using multi-threading which includes NER and triple extraction.
 
         Args:
             chunks (Union[List[str], Dict[str, Any]]): List of text passages or a dict of chunk_id to chunk data to be processed.
             output_dir (str): Directory to save output file.
+            combined (bool): If True, use a single LLM call per chunk for both NER and triple extraction.
+                If False (default), use the original two-call approach (NER first, then triple extraction).
 
         Returns:
             Tuple[Dict[str, List[str]], Dict[str, List[List[str]]]]:
@@ -125,42 +152,53 @@ class OpenIE:
         """
 
         if isinstance(chunks, List):
-            # Compute chunk ids in the same order as input chunks to preserve sequence
             chunk_keys = [compute_mdhash_id(chunk, prefix="chunk-") for chunk in chunks]
-            # Map chunk_id -> passage for quick lookup
             chunk_passages = {key: chunks[i] for i, key in enumerate(chunk_keys)}
         elif isinstance(chunks, Dict):
             chunk_keys = list(chunks.keys())
             chunk_passages = {chunk_key: chunk["content"] for chunk_key, chunk in chunks.items()}
 
-        ner_results_list = []
+        if combined:
+            # Single-call mode: NER + triple extraction in one LLM call per chunk
+            ner_results_list = []
+            triple_results_list = []
 
-        with ThreadPoolExecutor() as executor:
-            # Create NER futures for each chunk (submission order doesn't matter)
-            ner_futures = {
-                executor.submit(self.ner, chunk_key, chunk_passages[chunk_key]): chunk_key
-                for chunk_key in chunk_keys
-            }
+            with ThreadPoolExecutor() as executor:
+                futures = {
+                    executor.submit(self.combined_openie, chunk_key, chunk_passages[chunk_key]): chunk_key
+                    for chunk_key in chunk_keys
+                }
+                pbar = tqdm(as_completed(futures), total=len(futures), desc="Combined NER+Triple")
+                for future in pbar:
+                    ner_output, triple_output = future.result()
+                    ner_results_list.append(ner_output)
+                    triple_results_list.append(triple_output)
+        else:
+            # Original two-call mode: NER first, then triple extraction
+            ner_results_list = []
 
-            pbar = tqdm(as_completed(ner_futures), total=len(ner_futures), desc="NER")
-            for future in pbar:
-                result = future.result()
-                ner_results_list.append(result)
+            with ThreadPoolExecutor() as executor:
+                ner_futures = {
+                    executor.submit(self.ner, chunk_key, chunk_passages[chunk_key]): chunk_key
+                    for chunk_key in chunk_keys
+                }
+                pbar = tqdm(as_completed(ner_futures), total=len(ner_futures), desc="NER")
+                for future in pbar:
+                    result = future.result()
+                    ner_results_list.append(result)
 
-        triple_results_list = []
-        with ThreadPoolExecutor() as executor:
-            # Create triple extraction futures for each chunk using outputs from NER
-            re_futures = {
-                executor.submit(self.triple_extraction, ner_result.chunk_id,
-                                chunk_passages[ner_result.chunk_id],
-                                ner_result.unique_entities): ner_result.chunk_id
-                for ner_result in ner_results_list
-            }
-            # Collect triple extraction results with progress bar
-            pbar = tqdm(as_completed(re_futures), total=len(re_futures), desc="Extracting triples")
-            for future in pbar:
-                result = future.result()
-                triple_results_list.append(result)
+            triple_results_list = []
+            with ThreadPoolExecutor() as executor:
+                re_futures = {
+                    executor.submit(self.triple_extraction, ner_result.chunk_id,
+                                    chunk_passages[ner_result.chunk_id],
+                                    ner_result.unique_entities): ner_result.chunk_id
+                    for ner_result in ner_results_list
+                }
+                pbar = tqdm(as_completed(re_futures), total=len(re_futures), desc="Extracting triples")
+                for future in pbar:
+                    result = future.result()
+                    triple_results_list.append(result)
 
         # Build maps from chunk_id to results (these may be in completion order)
         ner_map = {res.chunk_id: res.unique_entities for res in ner_results_list}

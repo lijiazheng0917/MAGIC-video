@@ -15,6 +15,18 @@ if not hasattr(modeling_utils, "ALL_PARALLEL_STYLES") or modeling_utils.ALL_PARA
     modeling_utils.ALL_PARALLEL_STYLES = ["tp", "none", "colwise", 'rowwise']
 
 
+def _resolve_attention_impl() -> str:
+    """
+    Prefer flash-attn when available, otherwise fall back to SDPA.
+    This avoids hard crashes when flash-attn is installed but binary-incompatible.
+    """
+    try:
+        import flash_attn  # noqa: F401
+        return "flash_attention_2"
+    except Exception:
+        return "sdpa"
+
+
 class MMEBModel(nn.Module):
     TRANSFORMER_CLS = AutoModelForCausalLM
 
@@ -65,10 +77,11 @@ class MMEBModel(nn.Module):
     def build(cls, model_args: ModelArguments, **kwargs):
         config = AutoConfig.from_pretrained(model_args.model_name, trust_remote_code=True)
         model_backbone = get_backbone_name(hf_config=config)
+        attn_impl = _resolve_attention_impl()
         print_master(f'Loading backbone [{model_backbone}] from {model_args.model_name}')
         # Loading the base model
         if model_backbone in [QWEN2_VL]:
-            config._attn_implementation = "flash_attention_2"
+            config._attn_implementation = attn_impl
             config.padding_side = "left"
             config.use_cache = False
             base_model = backbone2model[model_backbone].from_pretrained(
@@ -78,7 +91,7 @@ class MMEBModel(nn.Module):
                 low_cpu_mem_usage=True,
             )
         elif model_backbone in [QWEN2_VL_TOKENSELECTION]:
-            config._attn_implementation = "flash_attention_2"
+            config._attn_implementation = attn_impl
             config.padding_side = "left"
             config.use_cache = False
 
@@ -100,7 +113,7 @@ class MMEBModel(nn.Module):
             config.use_cache = False
             base_model = cls.TRANSFORMER_CLS.from_pretrained(
                 model_args.model_name, **kwargs, config=config,
-                attn_implementation="flash_attention_2",
+                attn_implementation=attn_impl,
                 torch_dtype=torch.bfloat16,
                 trust_remote_code=True)
 
@@ -136,6 +149,7 @@ class MMEBModel(nn.Module):
     def load(cls, model_args: ModelArguments, is_trainable=True, **kwargs):
         # Loading the base model
         model_name_or_path = model_args.checkpoint_path if model_args.checkpoint_path else model_args.model_name
+        attn_impl = _resolve_attention_impl()
         config = AutoConfig.from_pretrained(model_name_or_path, trust_remote_code=True)
         if not hasattr(model_args, "model_backbone") or not model_args.model_backbone:
             model_backbone = get_backbone_name(hf_config=config, model_type=model_args.model_type)
@@ -143,8 +157,8 @@ class MMEBModel(nn.Module):
         print_master(f'Loading backbone [{model_args.model_backbone}] from {model_name_or_path}')
         if model_args.model_backbone in {QWEN2_VL, QWEN2_VL_TOKENSELECTION}:
             config = AutoConfig.from_pretrained(model_args.model_name, trust_remote_code=True)
-            config._attn_implementation = "flash_attention_2"
-            config.vision_config._attn_implementation = "flash_attention_2"
+            config._attn_implementation = attn_impl
+            config.vision_config._attn_implementation = attn_impl
             base_model = backbone2model[model_args.model_backbone].from_pretrained(
                 model_args.model_name,
                 torch_dtype=torch.bfloat16,

@@ -2,6 +2,7 @@ import logging
 
 import PIL
 from transformers.image_utils import ChannelDimension
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -11,17 +12,22 @@ from ..utils import print_master
 
 from .vlm_backbone.qwen2_vl.modeling_qwen2_vl import Qwen2VLForConditionalGeneration
 from .vlm_backbone.qwen2_vl.processing_qwen2_vl import Qwen2VLProcessor
-from .vlm_backbone.qwen2_vl_tokenselection.modeling_qwen2_vl import \
-    Qwen2VLForConditionalGeneration as Qwen2VLTokenSelectionForConditionalGeneration
-from .vlm_backbone.qwen2_vl_tokenselection.processing_qwen2_vl import \
-    Qwen2VLProcessor as Qwen2VLTokenSelectionProcessor
+
+_TOKENSELECTION_IMPORT_ERROR = None
+try:
+    from .vlm_backbone.qwen2_vl_tokenselection.modeling_qwen2_vl import \
+        Qwen2VLForConditionalGeneration as Qwen2VLTokenSelectionForConditionalGeneration
+    from .vlm_backbone.qwen2_vl_tokenselection.processing_qwen2_vl import \
+        Qwen2VLProcessor as Qwen2VLTokenSelectionProcessor
+except Exception as exc:
+    Qwen2VLTokenSelectionForConditionalGeneration = None  # type: ignore[assignment]
+    Qwen2VLTokenSelectionProcessor = Any  # type: ignore[assignment]
+    _TOKENSELECTION_IMPORT_ERROR = exc
 
 QWEN2_VL = 'qwen2_vl'
-QWEN2_VL_TOKENSELECTION = 'qwen2_vl'
 QWEN2_VL_TOKENSELECTION = 'qwen2_vl_tokenselection'
 MODEL2BACKBONE = {  # keys are from hf_config.model_type or manually added if not provided
     'qwen2_vl': QWEN2_VL,
-    'qwen2_vl_tokenselection': QWEN2_VL,
     'qwen2_vl_tokenselection': QWEN2_VL_TOKENSELECTION,
 }
 SUPPORTED_MODELS = set(MODEL2BACKBONE.keys())
@@ -38,8 +44,21 @@ VLM_VIDEO_TOKENS = {
 
 backbone2model = {
     QWEN2_VL: Qwen2VLForConditionalGeneration,
-    QWEN2_VL_TOKENSELECTION: Qwen2VLTokenSelectionForConditionalGeneration,
 }
+
+if Qwen2VLTokenSelectionForConditionalGeneration is not None:
+    backbone2model[QWEN2_VL_TOKENSELECTION] = Qwen2VLTokenSelectionForConditionalGeneration
+else:
+    class _UnavailableTokenSelectionModel:
+        @classmethod
+        def from_pretrained(cls, *args, **kwargs):
+            raise ImportError(
+                "qwen2_vl_tokenselection is unavailable in this environment. "
+                "Likely flash-attn binary/GLIBC mismatch. Use model_backbone='qwen2_vl' "
+                "or install a compatible flash-attn build."
+            ) from _TOKENSELECTION_IMPORT_ERROR
+
+    backbone2model[QWEN2_VL_TOKENSELECTION] = _UnavailableTokenSelectionModel
 
 
 def load_processor(model_args, data_args=None):
@@ -64,6 +83,11 @@ def load_processor(model_args, data_args=None):
             image_processor=image_processor, tokenizer=tokenizer, size=size
         )
     elif model_args.model_backbone == QWEN2_VL_TOKENSELECTION:
+        if _TOKENSELECTION_IMPORT_ERROR is not None:
+            raise ImportError(
+                "Failed to import qwen2_vl_tokenselection backend. "
+                "This backend requires a working flash-attn installation."
+            ) from _TOKENSELECTION_IMPORT_ERROR
         from .vlm_backbone.qwen2_vl_tokenselection.processing_qwen2_vl import Qwen2VLProcessor
         from .vlm_backbone.qwen2_vl_tokenselection.image_processing_qwen2_vl import Qwen2VLImageProcessor
         from .vlm_backbone.qwen2_vl_tokenselection.tokenization_qwen2_fast import Qwen2TokenizerFast

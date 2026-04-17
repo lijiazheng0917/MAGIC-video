@@ -198,9 +198,36 @@ class RagAgent(ABC):
 
         print(f"Loaded {len(data)} entries from {json_path}")
 
-        for idx, entry in tqdm(
-            enumerate(data), total=len(data), desc="Processing entries"
-        ):
+        existing_ids = set(self.database_t.collection.get()["ids"])
+        print(f"Existing IDs in collection: {len(existing_ids)}")
+
+        batch_ids = []
+        batch_docs = []
+        batch_metas = []
+        batch_size = 512
+
+        skipped_existing_entries = 0
+        skipped_empty_entries = 0
+        added_sentences = 0
+
+        def flush_batch():
+            nonlocal batch_ids, batch_docs, batch_metas, added_sentences, existing_ids
+            if not batch_ids:
+                return
+            embeddings = self.database_t.embedding_function(batch_docs)
+            self.database_t.collection.add(
+                ids=batch_ids,
+                documents=batch_docs,
+                metadatas=batch_metas,
+                embeddings=embeddings,
+            )
+            existing_ids.update(batch_ids)
+            added_sentences += len(batch_ids)
+            batch_ids = []
+            batch_docs = []
+            batch_metas = []
+
+        for idx, entry in tqdm(enumerate(data), total=len(data), desc="Processing entries"):
             try:
                 date_match = re.search(r"DAY(\d+)", entry["date"])
                 int_date = int(date_match.group(1)) if date_match else 0
@@ -216,14 +243,16 @@ class RagAgent(ABC):
                     for sentence in re.split(r"(?<=[.!?])\s*", entry["text"])
                     if sentence.strip()
                 ]
-                entry_id = f"{entry['date']}-{entry['start_time']}-{entry['end_time']}"
-                new_ids = [f"{entry_id}_{i}" for i in range(len(sentences))]
 
-                existing_docs = self.database_t.collection.get(
-                    ids=new_ids, include=["documents"]
-                )
-                if existing_docs["ids"] and any(existing_docs["documents"]):
-                    print(f"IDs {entry_id} already exist with content, skipping.")
+                if not sentences:
+                    skipped_empty_entries += 1
+                    continue
+
+                entry_id = f"{entry['date']}-{entry['start_time']}-{entry['end_time']}"
+                candidate_ids = [f"{entry_id}_{i}" for i in range(len(sentences))]
+
+                if all(doc_id in existing_ids for doc_id in candidate_ids):
+                    skipped_existing_entries += 1
                     continue
 
                 metadata = {
@@ -233,25 +262,30 @@ class RagAgent(ABC):
                     "video_path": video_path,
                 }
 
-                embeddings = self.database_t.embedding_function(sentences)
+                for doc_id, sentence in zip(candidate_ids, sentences):
+                    if doc_id in existing_ids:
+                        continue
+                    batch_ids.append(doc_id)
+                    batch_docs.append(sentence)
+                    batch_metas.append(metadata)
 
-                add_element = {
-                    "ids": new_ids,
-                    "documents": sentences,
-                    "metadatas": [metadata] * len(sentences),
-                    "embeddings": embeddings,
-                }
+                if len(batch_ids) >= batch_size:
+                    flush_batch()
 
-                self.database_t.collection.add(**add_element)
-                if idx % 100 == 0:
+                if idx % 500 == 0 and idx > 0:
                     print(
-                        f"Added {idx} entries. Current collection size: {len(self.database_t.collection.get(include=['documents'])['ids'])}"
+                        f"Progress idx={idx}, pending_batch={len(batch_ids)}, added_sentences={added_sentences}, skipped_existing_entries={skipped_existing_entries}, skipped_empty_entries={skipped_empty_entries}"
                     )
             except Exception as e:
                 print(f"Error processing entry {idx}: {e}")
                 continue
 
+        flush_batch()
+
         print("Database creation completed!")
+        print(
+            f"Added sentences: {added_sentences}, skipped existing entries: {skipped_existing_entries}, skipped empty entries: {skipped_empty_entries}"
+        )
         print(
             f"Final collection size: {len(self.database_t.collection.get(include=['documents'])['ids'])}"
         )
@@ -291,7 +325,7 @@ class RagAgent(ABC):
         ]
         if hour_data == []:
             last_event = {}
-            last_event["generated_text"] = self.generate_event_data(
+            last_event["text"] = self.generate_event_data(
                 date, hour_docs[0]["start_time"], time
             )
             last_event["date"] = date
@@ -301,7 +335,7 @@ class RagAgent(ABC):
 
         elif hour_data[-1]["end_time"] < time:
             last_event = {}
-            last_event["generated_text"] = self.generate_event_data(
+            last_event["text"] = self.generate_event_data(
                 date, hour_data[-1]["end_time"], time
             )
             last_event["date"] = date

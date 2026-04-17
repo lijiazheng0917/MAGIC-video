@@ -15,6 +15,10 @@ class NerRawOutput(BaseModel):
 class TripleRawOutput(BaseModel):
     triples: List[List[str]]
 
+class CombinedOpenIERawOutput(BaseModel):
+    named_entities: List[str]
+    triples: List[List[str]]
+
 @dataclass
 class NerOutput:
     chunk_id: str

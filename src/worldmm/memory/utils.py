@@ -25,10 +25,11 @@ class ReasoningOutput:
 @dataclass
 class RetrievedItem:
     """Represents a single retrieved item from any memory type."""
-    memory_type: str  # "episodic", "semantic", or "visual"
-    content: Union[str, List[Image.Image]]  # Text for episodic/semantic, images for visual
+    memory_type: str  # "episodic", "semantic", "visual", "topic_chain", "event_chain"
+    content: Union[str, List[Image.Image]]  # Text for episodic/semantic/chain, images for visual
     query: str  # The search query used
     round_num: int  # Which retrieval round
+    label: str = ""  # Chain label (e.g., "scissors" for topic, "cake making" for event)
 
 
 @dataclass 

@@ -55,8 +55,9 @@ class SemanticExtraction:
             else:
                 json_results[key] = value
         
+        safe_model_name = self.llm_model.model_name.replace("/", "_")
         os.makedirs(output_dir, exist_ok=True)
-        with open(os.path.join(output_dir, f"semantic_extraction_results_{self.llm_model.model_name}.json"), 'w', encoding='utf-8') as f:
+        with open(os.path.join(output_dir, f"semantic_extraction_results_{safe_model_name}.json"), 'w', encoding='utf-8') as f:
             json.dump(json_results, f, indent=2, ensure_ascii=False)
 
     def batch_semantic_extraction(self, episodic_triples_batch: Dict[str, List[List[str]]], output_dir: str = ".") -> Tuple[Dict[str, List[List[str]]], Dict[str, List[List[int]]]]:

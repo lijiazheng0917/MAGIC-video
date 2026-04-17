@@ -27,15 +27,32 @@ class CaptionEntry:
     video_path: Optional[str] = None
     
     @property
+    def is_float_time(self) -> bool:
+        """True if timestamps are float seconds (Video-MME/LVBench), not EgoLife DHHMMSSFF."""
+        try:
+            float(self.start_time)
+            return '.' in self.start_time or int(float(self.start_time)) < 1_000_000
+        except (ValueError, TypeError):
+            return False
+
+    @property
     def timestamp_int(self) -> Tuple[int, int]:
-        """Convert start and end times to integer format (day + time.zfill(8))."""
+        """Convert start and end times to integer format (day + time.zfill(8)).
+        For float-second timestamps, returns int(seconds) directly."""
+        if self.is_float_time:
+            return int(float(self.start_time)), int(float(self.end_time))
         day = self.date.replace('DAY', '').replace('Day', '')
         start_ts = int(day + self.start_time.zfill(8))
         end_ts = int(day + self.end_time.zfill(8))
         return start_ts, end_ts
-    
+
     def to_display_str(self) -> str:
         """Format caption for display with time range."""
+        if self.is_float_time:
+            s, e = float(self.start_time), float(self.end_time)
+            mm_s, ss_s = divmod(int(s), 60)
+            mm_e, ss_e = divmod(int(e), 60)
+            return f"[{mm_s:02d}:{ss_s:02d} - {mm_e:02d}:{ss_e:02d}]\n{self.text}"
         start_ts, end_ts = self.timestamp_int
         return f"[{_transform_timestamp(str(start_ts))} - {_transform_timestamp(str(end_ts))}]\n{self.text}"
 
@@ -86,20 +103,23 @@ class EpisodicMemory:
         llm_model: LLMModel,
         prompt_template_manager: PromptTemplateManager,
         granularities: Optional[List[str]] = None,
+        cache_dir: str = ".cache/episodic_memory",
     ):
         """
         Initialize EpisodicMemory.
-        
+
         Args:
             embedding_model: Embedding model for HippoRAG
             llm_model: LLM model for filtering
             prompt_template_manager: Prompt template manager
             granularities: List of granularity levels to use (default: all)
+            cache_dir: Base directory for HippoRAG cache (default: .cache/episodic_memory)
         """
         self.embedding_model = embedding_model
         self.llm_model = llm_model
         self.prompt_template_manager = prompt_template_manager
         self.granularities = granularities or self.GRANULARITY_ORDER
+        self.cache_dir = cache_dir
         
         # Storage for captions
         self.captions: Dict[str, List[CaptionEntry]] = {g: [] for g in self.granularities}
@@ -119,7 +139,7 @@ class EpisodicMemory:
         """Get or create HippoRAG instance for a granularity level."""
         if granularity not in self.hipporag:
             self.hipporag[granularity] = HippoRAG(
-                save_dir=f".cache/episodic_memory/{granularity}",
+                save_dir=f"{self.cache_dir}/{granularity}",
                 llm_model=self.llm_model,
                 embedding_model=self.embedding_model)
         return self.hipporag[granularity]
@@ -168,11 +188,18 @@ class EpisodicMemory:
         """Process raw caption data and create CaptionEntry objects."""
         for idx, entry in enumerate(data):
             caption_id = f"{granularity}_{idx}"
+            # Support both EgoLife (start_time/end_time) and Video-MME/LVBench (start_sec/end_sec)
+            start_time = str(entry.get("start_time", ""))
+            end_time = str(entry.get("end_time", ""))
+            if not start_time and "start_sec" in entry:
+                start_time = str(entry["start_sec"])
+            if not end_time and "end_sec" in entry:
+                end_time = str(entry["end_sec"])
             caption_entry = CaptionEntry(
                 id=caption_id,
                 text=entry.get("text", ""),
-                start_time=str(entry.get("start_time", "")),
-                end_time=str(entry.get("end_time", "")),
+                start_time=start_time,
+                end_time=end_time,
                 date=str(entry.get("date", "")),
                 granularity=granularity,
                 video_path=entry.get("video_path"),

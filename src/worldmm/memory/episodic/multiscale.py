@@ -17,7 +17,7 @@ def generate_multiscale_memory(db_name: str = "A1_JAKE",
         save_path: Path to save the generated events
     """
     # Initialize the Chroma database with the provided name
-    db_t = Chroma(name=args.db_name)
+    db_t = Chroma(name=db_name)
 
     # Initialize the RagAgent
     agent = RagAgent(database_t=db_t, name=db_name, video_base_dir=f"data/EgoLife/{db_name}")

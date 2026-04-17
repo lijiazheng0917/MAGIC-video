@@ -2,6 +2,7 @@
 Unified interface for multiple LLM providers
 """
 from typing import Any, Dict, List, Union, Optional
+import os
 
 
 class LLMModel:
@@ -25,21 +26,28 @@ class LLMModel:
     def _detect_provider(self, model_name: str, provider: Optional[str]) -> str:
         """
         Auto-detect the provider based on the model name if provider is not specified.
-        
+
         Args:
             model_name (str): Model name to use for auto-detection
             provider (Optional[str]): Explicitly specified provider
-            
+
         Returns:
             str: The detected or specified provider name
         """
         if provider is not None:
             return provider.lower()
-        
+
+        # Check if OpenRouter should be used (via environment variable)
+        if os.getenv("USE_OPENROUTER", "false").lower() == "true":
+            return "openrouter"
+
         model_name_lower = model_name.lower()
-        
+
         # Auto-detect based on model name patterns
-        if "gpt" in model_name_lower:
+        # Check openai/ prefix first (these go through OpenAI API, not OpenRouter)
+        if model_name_lower.startswith("openai/"):
+            return "openai"
+        elif "gpt" in model_name_lower:
             return "openai"
         elif "qwen3" in model_name_lower:
             return "qwen3vl"
@@ -53,6 +61,9 @@ class LLMModel:
         elif self.provider == "qwen3vl":
             from .qwen3vl import Qwen3VLModel
             return Qwen3VLModel(model_name=self.model_name, **kwargs)
+        elif self.provider == "openrouter":
+            from .openrouter import OpenRouterModel
+            return OpenRouterModel(model_name=self.model_name, **kwargs)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
@@ -64,6 +75,8 @@ class LLMModel:
             return self.model.generate(prompt, **kwargs)
         elif self.provider == "qwen3vl":
             return self.model.generate(prompt, **kwargs)
+        elif self.provider == "openrouter":
+            return self.model.generate(prompt, **kwargs)
         else:
             raise NotImplementedError(f"Model {self.provider} does not support text generation.")
 
@@ -74,6 +87,8 @@ class LLMModel:
         if self.provider == "openai":
             return self.model.generate_batch(batch_prompts, **kwargs)
         elif self.provider == "qwen3vl":
+            return self.model.generate_batch(batch_prompts, **kwargs)
+        elif self.provider == "openrouter":
             return self.model.generate_batch(batch_prompts, **kwargs)
         else:
             raise NotImplementedError(f"Model {self.provider} does not support batch generation.")
