@@ -1317,7 +1317,8 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                         max_event_chains=getattr(self, 'chain_max_events', 2),
                         topic_sim_threshold=getattr(self, 'chain_topic_sim', 0.5),
                         storyline_sim_threshold=getattr(self, 'chain_storyline_sim', 0.5),
-                        keyword_bypass_topk=getattr(self, 'chain_keyword_bypass_topk', True),
+                        storyline_min_hits=getattr(self, 'chain_storyline_min_hits', 1),
+                        storyline_granularities=getattr(self, 'chain_storyline_granularities', ("30sec", "3min")),
                     )
                     # Cross-round dedup
                     if chain_facts:

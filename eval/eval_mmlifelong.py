@@ -319,14 +319,23 @@ def main():
     parser.add_argument("--eval-indices", type=str, default=None,
                         help="Comma-separated question indices to evaluate (e.g. '30,53,72'). "
                              "If not set, all questions are evaluated.")
+    parser.add_argument("--shuffle-seed", type=int, default=None,
+                        help="If set, shuffle broadcast order and per-broadcast question order "
+                             "with this seed. Resume-safe (done_indices are tracked globally).")
     parser.add_argument("--chain-mode", type=str, default="facts",
                         help="Chain injection mode: 'facts' (default, paper config), or pass empty string to disable.")
     parser.add_argument("--chain-min-hits", type=int, default=4)
     parser.add_argument("--chain-max-topics", type=int, default=2)
-    parser.add_argument("--chain-max-events", type=int, default=1)
-    parser.add_argument("--chain-topic-sim", type=float, default=0.8)
-    parser.add_argument("--chain-storyline-sim", type=float, default=0.8)
-    parser.add_argument("--chain-keyword-bypass-topk", action="store_true", default=False)
+    parser.add_argument("--chain-max-events", type=int, default=2)
+    parser.add_argument("--chain-topic-sim", type=float, default=0.7)
+    parser.add_argument("--chain-storyline-sim", type=float, default=0.7)
+    parser.add_argument("--chain-storyline-min-hits", type=int, default=1,
+                        help="Minimum storyline step hits required for candidacy (default 1).")
+    parser.add_argument("--chain-storyline-granularities", type=str,
+                        default="30sec,3min",
+                        help="Comma-separated episode granularities used to "
+                             "detect storyline step hits (default '30sec,3min'). "
+                             "Add '10min' / '1h' to loosen coarse filter.")
     args = parser.parse_args()
 
     # Load val questions
@@ -412,10 +421,19 @@ def main():
         logger.info(f"--eval-indices: evaluating {len(eval_index_set)} specific questions")
 
     # Evaluation loop: per-broadcast
-    for bid, bid_questions in tqdm(sorted(broadcast_questions.items()), desc="Broadcasts"):
+    bcast_items = sorted(broadcast_questions.items())
+    if args.shuffle_seed is not None:
+        import random as _rand
+        _rng = _rand.Random(args.shuffle_seed)
+        _rng.shuffle(bcast_items)
+        logger.info(f"--shuffle-seed={args.shuffle_seed}: broadcast order shuffled")
+    for bid, bid_questions in tqdm(bcast_items, desc="Broadcasts"):
         remaining = [q for q in bid_questions if q["index"] not in done_indices]
         if eval_index_set is not None:
             remaining = [q for q in remaining if q["index"] in eval_index_set]
+        if args.shuffle_seed is not None:
+            import random as _rand
+            _rand.Random(args.shuffle_seed + hash(bid) % (2**31)).shuffle(remaining)
         if not remaining:
             logger.info(f"Broadcast {bid}: all questions done, skipping")
             continue
@@ -468,7 +486,10 @@ def main():
             world_memory.chain_max_events = args.chain_max_events
             world_memory.chain_topic_sim = args.chain_topic_sim
             world_memory.chain_storyline_sim = args.chain_storyline_sim
-            world_memory.chain_keyword_bypass_topk = args.chain_keyword_bypass_topk
+            world_memory.chain_storyline_min_hits = args.chain_storyline_min_hits
+            world_memory.chain_storyline_granularities = tuple(
+                g.strip() for g in args.chain_storyline_granularities.split(",") if g.strip()
+            )
 
         _log_memory(f"after WorldMemory init (broadcast {bid})")
 
@@ -623,7 +644,10 @@ def main():
             world_memory.chain_max_events = args.chain_max_events
             world_memory.chain_topic_sim = args.chain_topic_sim
             world_memory.chain_storyline_sim = args.chain_storyline_sim
-            world_memory.chain_keyword_bypass_topk = args.chain_keyword_bypass_topk
+            world_memory.chain_storyline_min_hits = args.chain_storyline_min_hits
+            world_memory.chain_storyline_granularities = tuple(
+                g.strip() for g in args.chain_storyline_granularities.split(",") if g.strip()
+            )
             world_memory.set_retrieval_top_k(
                 episodic=args.episodic_top_k,
                 semantic=args.semantic_top_k,

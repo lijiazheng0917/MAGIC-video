@@ -314,14 +314,19 @@ def main():
                         help="Topic chain coarse filter: min episode hits (default 1)")
     parser.add_argument("--chain-max-topics", type=int, default=3,
                         help="Max topic chains to inject per round (default 3)")
-    parser.add_argument("--chain-max-events", type=int, default=2,
-                        help="Max storyline chains to inject per round (default 2)")
-    parser.add_argument("--chain-topic-sim", type=float, default=0.5,
-                        help="Topic chain embedding similarity threshold (default 0.5)")
-    parser.add_argument("--chain-storyline-sim", type=float, default=0.5,
-                        help="Storyline embedding similarity threshold (default 0.5)")
-    parser.add_argument("--chain-keyword-bypass-topk", action="store_true", default=True,
-                        help="Keyword-matched chains bypass topk limit (default True for EgoLife)")
+    parser.add_argument("--chain-max-events", type=int, default=1,
+                        help="Max storyline chains to inject per round (default 1 — W4 config)")
+    parser.add_argument("--chain-topic-sim", type=float, default=0.7,
+                        help="Topic chain embedding similarity threshold (default 0.7)")
+    parser.add_argument("--chain-storyline-sim", type=float, default=0.7,
+                        help="Storyline embedding similarity threshold (default 0.7)")
+    parser.add_argument("--chain-storyline-min-hits", type=int, default=1,
+                        help="Minimum storyline step hits required for candidacy (default 1)")
+    parser.add_argument("--chain-storyline-granularities", type=str,
+                        default="30sec,3min",
+                        help="Comma-separated episode granularities used to "
+                             "detect storyline step hits (default '30sec,3min'). "
+                             "Add '10min' / '1h' to loosen coarse filter.")
     args = parser.parse_args()
 
     # Resolve graph path default for unified_graph backend
@@ -379,7 +384,10 @@ def main():
         world_memory.chain_max_events = args.chain_max_events
         world_memory.chain_topic_sim = args.chain_topic_sim
         world_memory.chain_storyline_sim = args.chain_storyline_sim
-        world_memory.chain_keyword_bypass_topk = args.chain_keyword_bypass_topk
+        world_memory.chain_storyline_min_hits = args.chain_storyline_min_hits
+        world_memory.chain_storyline_granularities = tuple(
+            g.strip() for g in args.chain_storyline_granularities.split(",") if g.strip()
+        )
         logger.info(
             f"BM25 weight: {args.bm25_weight}, damping: {args.damping}"
         )
@@ -588,7 +596,10 @@ def main():
             wm.chain_max_events = args.chain_max_events
             wm.chain_topic_sim = args.chain_topic_sim
             wm.chain_storyline_sim = args.chain_storyline_sim
-            wm.chain_keyword_bypass_topk = args.chain_keyword_bypass_topk
+            wm.chain_storyline_min_hits = args.chain_storyline_min_hits
+            wm.chain_storyline_granularities = tuple(
+                g.strip() for g in args.chain_storyline_granularities.split(",") if g.strip()
+            )
         wm.set_retrieval_top_k(
             episodic=args.episodic_top_k,
             semantic=args.semantic_top_k,

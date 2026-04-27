@@ -116,24 +116,31 @@ class UnifiedMemory:
         if storyline_path and os.path.exists(storyline_path):
             import json as _json5, re as _re3
             raw = _json5.load(open(storyline_path))
-            def _parse_hms(t):
+            def _parse_hms(t, as_seconds=False):
+                """Parse 'HH:MM:SS' or 'HH:MM'. If as_seconds, return total seconds
+                (MM-Lifelong / Video-MME float-second nodes); otherwise return
+                DHHMMSSFF time-component (HH*1e6+MM*1e4+SS*100) for EgoLife nodes."""
                 m = _re3.match(r'(\d{1,2}):(\d{2}):?(\d{2})?', t)
-                if m:
-                    return (int(m.group(1)) * 1000000
-                            + int(m.group(2)) * 10000
-                            + int(m.group(3) or 0) * 100)
-                return 0
+                if not m:
+                    return 0
+                h, mn, s = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
+                if as_seconds:
+                    return h * 3600 + mn * 60 + s
+                return h * 1000000 + mn * 10000 + s * 100
             for sl in raw:
-                # Convert step times to DHHMMSSFF for matching
+                # Detect format: EgoLife steps carry "DAY*"; livestream steps don't.
+                # When no day prefix, node.start_ts is in float seconds, so step
+                # times must also be parsed as seconds to allow comparison.
                 steps_with_ts = []
                 for step in sl.get("steps", []):
                     day = step.get("day", "")
                     dm = _re3.match(r'DAY(\d+)', day)
                     day_prefix = int(dm.group(1)) * 100000000 if dm else 0
+                    as_seconds = (day_prefix == 0)
                     st = step.get("start_time", "")
                     et = step.get("end_time", "")
-                    start_ts = day_prefix + _parse_hms(st)
-                    end_ts = day_prefix + _parse_hms(et)
+                    start_ts = day_prefix + _parse_hms(st, as_seconds=as_seconds)
+                    end_ts = day_prefix + _parse_hms(et, as_seconds=as_seconds)
                     if start_ts == 0 and end_ts == 0:
                         continue
                     steps_with_ts.append({
@@ -166,7 +173,8 @@ class UnifiedMemory:
         embedding_model=None,
         topic_sim_threshold: float = 0.5,
         storyline_sim_threshold: float = 0.5,
-        keyword_bypass_topk: bool = True,
+        storyline_min_hits: int = 1,
+        storyline_granularities: Tuple[str, ...] = ("30sec", "3min"),
     ) -> List[dict]:
         """Find chain facts relevant to retrieval results.
 
@@ -222,15 +230,17 @@ class UnifiedMemory:
 
         _topic_coarse_passed = {ent for ent, cnt in topic_hits.items() if cnt >= min_hits}
 
-        # Storyline matching: check if 30sec/3min episodes fall into
-        # any step of the same storyline (≥1 step hit)
-        # Then filter by query keyword matching against key_entities
+        # Storyline matching: check which episodes fall into
+        # any step of the same storyline (≥storyline_min_hits step hits)
+        # Then filter by query keyword matching against key_entities.
+        # Granularities used for the coarse filter are configurable.
+        _storyline_grans = set(storyline_granularities)
         storyline_step_hits = {}  # storyline_idx → set of step_indices
         for node, _ in results:
             if node.node_type != NodeType.EPISODE:
                 continue
             gran = node.metadata.get("granularity", "")
-            if gran not in ("30sec", "3min"):
+            if gran not in _storyline_grans:
                 continue
             for sl_idx, sl in enumerate(self._storylines):
                 for step_idx, step in enumerate(sl["steps"]):
@@ -254,7 +264,7 @@ class UnifiedMemory:
         _embedding_sl_candidates = set()  # candidates for embedding check
         if query_lower:
             for sl_idx, step_indices in storyline_step_hits.items():
-                if len(step_indices) < 1:
+                if len(step_indices) < storyline_min_hits:
                     continue
                 sl = self._storylines[sl_idx]
                 matched = False
@@ -267,14 +277,10 @@ class UnifiedMemory:
                 else:
                     _embedding_sl_candidates.add(sl_idx)
 
-        if keyword_bypass_topk:
-            embedding_sl_slots = max(0, max_event_chains - len(keyword_matched_sl))
-            relevant_storylines = list(keyword_matched_sl)
-        else:
-            relevant_storylines = list(keyword_matched_sl)
-            relevant_storylines.sort(key=lambda x: -x[1])
-            relevant_storylines = relevant_storylines[:max_event_chains]
-            embedding_sl_slots = max(0, max_event_chains - len(relevant_storylines))
+        relevant_storylines = list(keyword_matched_sl)
+        relevant_storylines.sort(key=lambda x: -x[1])
+        relevant_storylines = relevant_storylines[:max_event_chains]
+        embedding_sl_slots = max(0, max_event_chains - len(relevant_storylines))
 
         # Topic chains matching
         keyword_matched = []    # entities matched by query keyword
@@ -286,18 +292,15 @@ class UnifiedMemory:
             else:
                 _topic_embedding_set.add(entity)
 
-        if keyword_bypass_topk:
-            # New logic: keyword matches bypass topk, embedding fills remaining slots
-            embedding_slots = max(0, max_topic_chains - len(keyword_matched))
-            relevant = list(keyword_matched)
-        else:
-            # Old logic: keyword + embedding all compete for topk slots
-            relevant = list(keyword_matched)
-            relevant.sort(key=lambda x: -x[1])
-            relevant = relevant[:max_topic_chains]
-            embedding_slots = max(0, max_topic_chains - len(relevant))
+        relevant = list(keyword_matched)
+        relevant.sort(key=lambda x: -x[1])
+        relevant = relevant[:max_topic_chains]
+        embedding_slots = max(0, max_topic_chains - len(relevant))
 
-        if not relevant and not _topic_embedding_set and not relevant_storylines:
+        # Bug fix: also keep going when only Tier-2 storyline candidates remain,
+        # otherwise embedding-tier-only storyline matches are silently dropped.
+        if (not relevant and not _topic_embedding_set
+                and not relevant_storylines and not _embedding_sl_candidates):
             return []
 
         # Parse query_time for filtering
@@ -308,23 +311,46 @@ class UnifiedMemory:
                 qt_day = int(s[0])
                 qt_secs = int(s[1:3]) * 3600 + int(s[3:5]) * 60 + int(s[5:7])
 
+        # Helpers to parse timestamps in both formats:
+        #   EgoLife: DHHMMSSFF int (e.g. 111094300 = DAY1 11:09:43.00)
+        #   MM-Lifelong / Video-MME: float seconds within a single video (e.g. 630.0)
+        def _ts_to_day_secs(ts):
+            s = str(int(ts))
+            if len(s) >= 7:
+                return (int(s[0]),
+                        int(s[1:3]) * 3600 + int(s[3:5]) * 60 + int(s[5:7]))
+            return (0, int(ts))
+
+        def _fact_time_to_day_secs(time_str):
+            """Parse a fact/step `time` string. Returns (day, secs) or None."""
+            if not time_str:
+                return None
+            m = re.match(r'DAY(\d+)\s+(\d{1,2}):(\d{2}):?(\d{2})?', time_str)
+            if m:
+                return (int(m.group(1)),
+                        int(m.group(2)) * 3600 + int(m.group(3)) * 60
+                        + (int(m.group(4)) if m.group(4) else 0))
+            m2 = re.match(r'^(\d{1,2}):(\d{2}):?(\d{2})?', time_str.strip())
+            if m2:
+                return (0,
+                        int(m2.group(1)) * 3600 + int(m2.group(2)) * 60
+                        + (int(m2.group(3)) if m2.group(3) else 0))
+            return None
+
         # Build set of time ranges covered by retrieved episodes (for dedup)
-        # Convert to (day, start_secs, end_secs) with a small margin
         _DEDUP_MARGIN = 60  # seconds — facts within 60s of an episode are "covered"
         covered_ranges = []
         for node, _ in results:
             if node.node_type != NodeType.EPISODE:
                 continue
-            st_s = str(int(node.start_ts))
-            et_s = str(int(node.end_ts))
-            if len(st_s) >= 7 and len(et_s) >= 7:
-                st_day = int(st_s[0])
-                st_secs = int(st_s[1:3]) * 3600 + int(st_s[3:5]) * 60 + int(st_s[5:7])
-                et_secs = int(et_s[1:3]) * 3600 + int(et_s[3:5]) * 60 + int(et_s[5:7])
+            st_parsed = _ts_to_day_secs(node.start_ts)
+            et_parsed = _ts_to_day_secs(node.end_ts)
+            if st_parsed and et_parsed:
+                st_day, st_secs = st_parsed
+                _, et_secs = et_parsed
                 covered_ranges.append((st_day, st_secs - _DEDUP_MARGIN, et_secs + _DEDUP_MARGIN))
 
         def _is_covered(day, secs):
-            """Check if a (day, secs) falls within any retrieved episode's time range."""
             for c_day, c_start, c_end in covered_ranges:
                 if day == c_day and c_start <= secs <= c_end:
                     return True
@@ -337,10 +363,9 @@ class UnifiedMemory:
             facts = self._topic_facts.get(chain_name, [])
             for f in facts:
                 time_str = f.get("time", "")
-                m = re.match(r'DAY(\d+)\s+(\d{1,2}):(\d{2})', time_str)
-                if m:
-                    f_day = int(m.group(1))
-                    f_secs = int(m.group(2)) * 3600 + int(m.group(3)) * 60
+                parsed = _fact_time_to_day_secs(time_str)
+                if parsed is not None:
+                    f_day, f_secs = parsed
                     if (f_day, f_secs) > (qt_day, qt_secs):
                         continue
                     if _is_covered(f_day, f_secs):
@@ -361,34 +386,38 @@ class UnifiedMemory:
             sl = self._storylines[sl_idx]
             for step in sl["steps"]:
                 step_ts = step["start_ts"]
-                s = str(int(step_ts))
-                if len(s) >= 7:
-                    s_day = int(s[0])
-                    s_secs = int(s[1:3]) * 3600 + int(s[3:5]) * 60 + int(s[5:7])
+                s_parsed = _ts_to_day_secs(step_ts)
+                if s_parsed is not None:
+                    s_day, s_secs = s_parsed
                     if (s_day, s_secs) > (qt_day, qt_secs):
                         continue
                     if _is_covered(s_day, s_secs):
                         skipped_covered += 1
                         continue
 
-                # Format time from step
+                # Format time from step. EgoLife steps carry "DAY*" → step_ts is
+                # DHHMMSSFF; MML/Video-MME steps have empty day → step_ts is total
+                # seconds (post _parse_hms fix).
                 day = step.get("day", "")
                 st = step_ts
                 et = step.get("end_ts", step_ts)
-                d = int(st) // 100000000
-                remainder = int(st) % 100000000
-                h = remainder // 1000000
-                m = (remainder % 1000000) // 10000
-                s = (remainder % 10000) // 100
-                d2 = int(et) // 100000000
-                remainder2 = int(et) % 100000000
-                h2 = remainder2 // 1000000
-                m2 = (remainder2 % 1000000) // 10000
-                s2 = (remainder2 % 10000) // 100
                 if day:
+                    d = int(st) // 100000000
+                    remainder = int(st) % 100000000
+                    h = remainder // 1000000
+                    m = (remainder % 1000000) // 10000
+                    s = (remainder % 10000) // 100
+                    remainder2 = int(et) % 100000000
+                    h2 = remainder2 // 1000000
+                    m2 = (remainder2 % 1000000) // 10000
+                    s2 = (remainder2 % 10000) // 100
                     time_str = f"{day} {h:02d}:{m:02d}:{s:02d}"
                     end_time_str = f"{h2:02d}:{m2:02d}:{s2:02d}"
                 else:
+                    total_s = int(st)
+                    h, m, s = total_s // 3600, (total_s % 3600) // 60, total_s % 60
+                    total_e = int(et)
+                    h2, m2, s2 = total_e // 3600, (total_e % 3600) // 60, total_e % 60
                     time_str = f"{h:02d}:{m:02d}:{s:02d}"
                     end_time_str = f"{h2:02d}:{m2:02d}:{s2:02d}"
 
@@ -402,29 +431,50 @@ class UnifiedMemory:
                         "chain_type": "event",
                     })
 
-        # Sort by time
+        # Sort by time. Handles both formats:
+        #   - EgoLife: "DAY1 11:09:43"
+        #   - MM-Lifelong / Video-MME: "00:10:30" (relative seconds within a video)
         def sort_key(f):
             import re
-            m = re.match(r'DAY(\d+)\s+(\d{1,2}):(\d{2})', f["time"])
+            t = f.get("time", "")
+            m = re.match(r'DAY(\d+)\s+(\d{1,2}):(\d{2}):?(\d{2})?', t)
             if m:
-                return int(m.group(1)) * 100000 + int(m.group(2)) * 3600 + int(m.group(3)) * 60
+                day = int(m.group(1))
+                h = int(m.group(2)); mn = int(m.group(3)); s = int(m.group(4) or 0)
+                return day * 86400 + h * 3600 + mn * 60 + s
+            m2 = re.match(r'(\d{1,2}):(\d{2}):?(\d{2})?', t)
+            if m2:
+                h = int(m2.group(1)); mn = int(m2.group(2)); s = int(m2.group(3) or 0)
+                return h * 3600 + mn * 60 + s
             return 0
         all_facts.sort(key=sort_key)
 
         # Embedding filter for topic candidates: query vs time-filtered facts
-        # Only fill remaining slots (embedding_slots) after keyword-matched topics
+        # Only fill remaining slots (embedding_slots) after keyword-matched topics.
+        # NOTE: previous version read facts from all_facts, which only contained Tier-1
+        # entities → Tier-2 candidates always had empty facts and were always dropped.
+        # Fix: read facts directly from self._topic_facts, applying the same time filter
+        # used for Tier-1, then append accepted Tier-2 entities' facts to all_facts.
         _TOPIC_SIM_THRESHOLD = topic_sim_threshold
         _embedding_keep_topics = set()  # topics that pass embedding check
         if _topic_embedding_set and embedding_model and query_text and embedding_slots > 0:
             import numpy as np
-            # Collect time-filtered facts text per candidate topic
+            # Collect time-filtered facts text per Tier-2 candidate topic
+            # (read directly from source, not from all_facts).
             topic_candidate_facts = {}
-            for f in all_facts:
-                lbl = f.get("label", "")
-                if lbl in _topic_embedding_set and f.get("chain_type") == "topic":
-                    if lbl not in topic_candidate_facts:
-                        topic_candidate_facts[lbl] = []
-                    topic_candidate_facts[lbl].append(f.get("fact", ""))
+            for entity in _topic_embedding_set:
+                fact_texts = []
+                for f in self._topic_facts.get(entity, []):
+                    parsed = _fact_time_to_day_secs(f.get("time", ""))
+                    if parsed is not None:
+                        f_day, f_secs = parsed
+                        if (f_day, f_secs) > (qt_day, qt_secs):
+                            continue
+                    fact_text = f.get("fact", "")
+                    if fact_text:
+                        fact_texts.append(fact_text)
+                if fact_texts:
+                    topic_candidate_facts[entity] = fact_texts
 
             if topic_candidate_facts:
                 try:
@@ -451,6 +501,27 @@ class UnifiedMemory:
                     for lbl, sim in scored_candidates[:embedding_slots]:
                         _embedding_keep_topics.add(lbl)
                         relevant.append((("topic", lbl), topic_hits.get(lbl, 0)))
+                        # Also append this entity's facts to all_facts so they are
+                        # available downstream (with the same time + cover filter as Tier-1).
+                        for f in self._topic_facts.get(lbl, []):
+                            time_str = f.get("time", "")
+                            parsed = _fact_time_to_day_secs(time_str)
+                            if parsed is not None:
+                                f_day, f_secs = parsed
+                                if (f_day, f_secs) > (qt_day, qt_secs):
+                                    continue
+                                if _is_covered(f_day, f_secs):
+                                    skipped_covered += 1
+                                    continue
+                            fact_text = f.get("fact", "")
+                            if not fact_text:
+                                continue
+                            all_facts.append({
+                                "time": time_str,
+                                "fact": fact_text,
+                                "label": lbl,
+                                "chain_type": "topic",
+                            })
 
                 except Exception as e:
                     logger.warning(f"Topic embedding filter failed: {e}")
@@ -479,15 +550,18 @@ class UnifiedMemory:
         if _embedding_sl_candidates and embedding_model and query_text and embedding_sl_slots > 0:
             import numpy as np
             sl_idx_to_name = {idx: self._storylines[idx]["name"] for idx in _embedding_sl_candidates}
-            candidate_names = set(sl_idx_to_name.values())
 
+            # NOTE: previous version read storyline texts from all_facts (which only
+            # contained Tier-1 storylines), so Tier-2 candidates always had empty
+            # text → all KEEP/DROP log lines never fired.
+            # Fix: build candidate texts directly from self._storylines step descriptions.
             candidate_facts_text = {}
-            for f in all_facts:
-                lbl = f.get("label", "")
-                if lbl in candidate_names and f.get("chain_type") == "event":
-                    if lbl not in candidate_facts_text:
-                        candidate_facts_text[lbl] = []
-                    candidate_facts_text[lbl].append(f.get("fact", ""))
+            for sl_idx in _embedding_sl_candidates:
+                sl_name = sl_idx_to_name[sl_idx]
+                step_texts = [step.get("description", "") for step in self._storylines[sl_idx]["steps"]
+                              if step.get("description")]
+                if step_texts:
+                    candidate_facts_text[sl_name] = step_texts
 
             if candidate_facts_text:
                 try:
@@ -517,6 +591,49 @@ class UnifiedMemory:
                             sl_idx = name_to_idx[lbl]
                             step_count = len(storyline_step_hits.get(sl_idx, set()))
                             relevant_storylines.append((sl_idx, step_count))
+                            # Also append this storyline's step facts to all_facts
+                            # (with the same time + cover filter as Tier-1).
+                            sl = self._storylines[sl_idx]
+                            for step in sl["steps"]:
+                                step_ts = step["start_ts"]
+                                s_parsed = _ts_to_day_secs(step_ts)
+                                if s_parsed is not None:
+                                    s_day, s_secs = s_parsed
+                                    if (s_day, s_secs) > (qt_day, qt_secs):
+                                        continue
+                                    if _is_covered(s_day, s_secs):
+                                        skipped_covered += 1
+                                        continue
+                                day = step.get("day", "")
+                                st = step_ts
+                                et = step.get("end_ts", step_ts)
+                                if day:
+                                    remainder = int(st) % 100000000
+                                    h = remainder // 1000000
+                                    mm = (remainder % 1000000) // 10000
+                                    ss = (remainder % 10000) // 100
+                                    remainder2 = int(et) % 100000000
+                                    h2 = remainder2 // 1000000
+                                    m2 = (remainder2 % 1000000) // 10000
+                                    s2 = (remainder2 % 10000) // 100
+                                    time_str = f"{day} {h:02d}:{mm:02d}:{ss:02d}"
+                                    end_time_str = f"{h2:02d}:{m2:02d}:{s2:02d}"
+                                else:
+                                    total_s = int(st)
+                                    h, mm, ss = total_s // 3600, (total_s % 3600) // 60, total_s % 60
+                                    total_e = int(et)
+                                    h2, m2, s2 = total_e // 3600, (total_e % 3600) // 60, total_e % 60
+                                    time_str = f"{h:02d}:{mm:02d}:{ss:02d}"
+                                    end_time_str = f"{h2:02d}:{m2:02d}:{s2:02d}"
+                                desc = step.get("description", "")
+                                if desc:
+                                    all_facts.append({
+                                        "time": time_str,
+                                        "end_time": end_time_str,
+                                        "fact": desc,
+                                        "label": sl["name"],
+                                        "chain_type": "event",
+                                    })
 
                 except Exception as e:
                     logger.warning(f"Storyline embedding fallback failed: {e}")
@@ -525,16 +642,27 @@ class UnifiedMemory:
         all_facts = [f for f in all_facts
                      if f.get("chain_type") != "event" or f.get("label", "") in _accepted_storyline_names]
 
+        # Re-sort: Tier-2 facts were appended after the initial sort, so resort
+        # the whole list to keep facts time-ordered downstream.
+        all_facts.sort(key=sort_key)
+
         n_topic = len(relevant)
         n_storyline = len(relevant_storylines)
+        # Accurate Tier-1 vs Tier-2 counts (the previous diff-based formula went
+        # negative when keyword_matched got truncated by max_topic_chains).
+        topic_tier2_count = sum(1 for (_, e), _ in relevant if e in _embedding_keep_topics)
+        topic_tier1_count = n_topic - topic_tier2_count
+        keyword_matched_sl_idx = {idx for idx, _ in keyword_matched_sl}
+        sl_tier1_count = sum(1 for idx, _ in relevant_storylines if idx in keyword_matched_sl_idx)
+        sl_tier2_count = n_storyline - sl_tier1_count
         facts_per_label = {}
         for f in all_facts:
             lbl = f.get("label", "")
             facts_per_label[lbl] = facts_per_label.get(lbl, 0) + 1
         topic_info = [f'{n}({topic_hits.get(n,0)} hits, {facts_per_label.get(n,0)}f)' for (_, n), _ in relevant[:5]]
         sl_info = [f'{self._storylines[idx]["name"][:25]}({c} hits, {facts_per_label.get(self._storylines[idx]["name"],0)}f)' for idx, c in relevant_storylines[:5]]
-        logger.info(f"[chain] {n_topic} topics ({len(keyword_matched)} keyword, {n_topic-len(keyword_matched)} embedding), "
-                    f"{n_storyline} storylines ({len(keyword_matched_sl)} keyword, {n_storyline-len(keyword_matched_sl)} embedding), "
+        logger.info(f"[chain] {n_topic} topics ({topic_tier1_count} keyword, {topic_tier2_count} embedding), "
+                    f"{n_storyline} storylines ({sl_tier1_count} keyword, {sl_tier2_count} embedding), "
                     f"{len(all_facts)} facts (skipped {skipped_covered} covered) "
                     f"({', '.join(topic_info + sl_info)})")
 

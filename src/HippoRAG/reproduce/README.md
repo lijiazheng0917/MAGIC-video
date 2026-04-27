@@ -1,1 +1,0 @@
-This folder contains all the materials needed for reproducibility of the implementation.

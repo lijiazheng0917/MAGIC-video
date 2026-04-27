@@ -15,6 +15,9 @@ cd nips2026code
 # Environment
 uv sync
 source .venv/bin/activate
+
+# Python path (required for every shell that runs eval/preprocess)
+export PYTHONPATH=$PWD/src/EgoRAG:$PWD/src:${PYTHONPATH:-}
 ```
 
 ### API keys
@@ -148,7 +151,7 @@ python eval/eval_egolife.py \
     --parallel 8
 ```
 
-Chain hyperparameters use paper defaults. For the baseline (independent three-way retrieval), pass `--retrieval-backend independent --chain-mode ""`.
+Chain hyperparameters use paper defaults (W4: `--chain-max-events 1 --chain-topic-sim 0.7 --chain-storyline-sim 0.7`). For the baseline (independent three-way retrieval), pass `--retrieval-backend independent --chain-mode ""`.
 
 ---
 
@@ -176,7 +179,7 @@ python eval/eval_egor1.py \
     --storyline-path output/metadata/storylines/A1_JAKE/step3_enriched_chains.json
 ```
 
-Baseline: pass `--retrieval-backend independent --chain-mode ""`.
+Chain hyperparameters use paper defaults (X3: `--chain-max-events 1 --chain-topic-sim 0.7 --chain-storyline-sim 0.7`). Baseline: pass `--retrieval-backend independent --chain-mode ""`.
 
 ---
 
@@ -268,7 +271,7 @@ python eval/eval_mmlifelong.py \
     --parallel 8
 ```
 
-The chain hyperparameters default to the paper's Strict config (`min-hits 4 / topic-sim 0.8 / storyline-sim 0.8 / max-topics 2 / max-events 1`). Baseline: pass `--retrieval-backend independent --chain-mode ""`.
+The chain hyperparameters default to the paper's tuned config F5 (`min-hits 4 / topic-sim 0.7 / storyline-sim 0.7 / max-topics 2 / max-events 2 / storyline-min-hits 1 / storyline-granularities "30sec,3min"`). Baseline: pass `--retrieval-backend independent --chain-mode ""`.
 
 ### 4.6 Re-judge with a different LLM `[API]`
 
@@ -286,8 +289,8 @@ python eval/rejudge.py \
 
 | Benchmark | Metric | Baseline (independent retrieval) | Ours (UG + chain) |
 |---|---|---|---|
-| EgoLifeQA (500q) | Accuracy | 56.0 | **65.7** |
-| Ego-R1 (50q) | Accuracy | 57.3 | **61.3** |
+| EgoLifeQA (500q) | Accuracy | 56.0 | **67.6** |
+| Ego-R1 (50q) | Accuracy | 57.3 | **66.0** |
 | MM-Lifelong (623q) | GPT-5 judge avg | 22.0 | **23.8** |
 
 See the paper for per-question-type breakdowns and judge-comparison tables.

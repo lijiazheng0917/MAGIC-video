@@ -221,3 +221,35 @@ baselines/scripts/*.sh
 script/
 script_mmlifelong/
 preprocess/visualize_graph.py
+
+# HippoRAG upstream reproducibility data (not used by WorldMM)
+src/HippoRAG/reproduce/
+
+# Local UV environment marker
+.python-version
+
+# OS / editor backups
+.DS_Store
+*.swp
+*.swo
+*~
+
+# ctags / cscope
+tags
+cscope.out
+
+# Local LaTeX artefacts
+*.aux
+*.toc
+*.out
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+
+# Local secrets / env files
+.env
+.env.local
+*.key
+*credentials*
