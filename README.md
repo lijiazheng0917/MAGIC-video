@@ -4,6 +4,11 @@
 
 Supported benchmarks: **EgoLifeQA** (MCQ), **Ego-R1** (MCQ), **MM-Lifelong** (open-ended).
 
+<p align="center">
+  <img src="figures/fig2.png" width="900" alt="Method overview">
+</p>
+<p align="center"><em>Method overview. Offline (left): video → 30s captions → Multimodal Memory Graph (MMG) → Narrative Memory Chains (NMC). Online (right): query-time cross-modal PPR over MMG plus narrative injection from NMC into the agent context.</em></p>
+
 ---
 
 ## 1. Installation
@@ -287,13 +292,17 @@ python eval/rejudge.py \
 
 ## 5. Main Results (paper defaults)
 
-| Benchmark | Metric | Baseline (independent retrieval) | Ours (UG + chain) |
-|---|---|---|---|
-| EgoLifeQA (500q) | Accuracy | 56.0 | **67.6** |
-| Ego-R1 (50q) | Accuracy | 57.3 | **66.0** |
-| MM-Lifelong (623q) | GPT-5 judge avg | 22.0 | **23.8** |
+<p align="center">
+  <img src="figures/result1.png" width="900" alt="Main benchmark results">
+</p>
+<p align="center"><em>Main results across EgoLifeQA, Ego-R1 and MM-Lifelong; rows correspond to the model categories reported in the paper.</em></p>
 
-See the paper for per-question-type breakdowns and judge-comparison tables.
+<p align="center">
+  <img src="figures/result2.png" width="900" alt="MM-Lifelong per-question-type breakdown">
+</p>
+<p align="center"><em>MM-Lifelong per-question-type breakdown.</em></p>
+
+See the paper for ablations, judge-comparison tables, and chain-injection breakdown.
 
 ---
 
