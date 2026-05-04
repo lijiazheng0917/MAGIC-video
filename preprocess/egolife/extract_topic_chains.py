@@ -110,7 +110,7 @@ def call_llm(client, model, prompt, system=SYSTEM_PROMPT, max_tokens=4096, max_r
                                 depth -= 1
                                 if depth == 0:
                                     try: return json.loads(raw[start:i+1])
-                                    except: break
+                                    except json.JSONDecodeError: break
             if attempt < max_retries - 1:
                 time.sleep(1)
             logger.warning(f"JSON parse error for '{prompt[:50]}' (attempt {attempt+1})")

@@ -59,58 +59,7 @@ def _log_memory(label: str):
 # LLM-as-Judge evaluation (from MM-Lifelong paper Appendix C.3)
 # ---------------------------------------------------------------------------
 
-JUDGE_PROMPT = """As an AI assistant, your task is to evaluate a candidate answer in comparison to a given correct answer.
-The question itself, the correct ground truth answer, and the candidate answer will be provided to you.
-
-You must FIRST provide a brief analysis explaining the semantic similarity between the groundtruth and the candidate answer.
-
-THEN, on a new line, output the final score.
-
-Scoring criteria:
-
-- 0: No similarity.
-  The candidate answer is completely irrelevant, contradictory, or does not address the question at all.
-
-- 1: Very low similarity.
-  The candidate answer mentions a related topic or keyword, but fails to answer the question
-  and does not convey the main meaning of the groundtruth.
-
-- 2: Low similarity.
-  The candidate answer addresses the question in a limited way, capturing some minor aspects,
-  but misses or misrepresents the core idea or key facts of the groundtruth.
-
-- 3: Moderate similarity.
-  The candidate answer captures the main idea of the groundtruth,
-  but omits several important details or includes noticeable inaccuracies.
-
-- 4: High similarity.
-  The candidate answer correctly captures the main idea and most key details of the groundtruth,
-  with only minor omissions, simplifications, or non-critical inaccuracies.
-
-- 5: Complete similarity.
-  The candidate answer is semantically equivalent to the groundtruth,
-  covering all essential information with no meaningful omissions or errors.
-
-Special Rules:
-
-- Hallucination-sensitive questions:
-  Score 5 only if all required items are correct;
-  if any item is incorrect, missing, or hallucinated, score 0 (no partial credit).
-
-- Time-duration questions:
-  Allow errors within the range defined by the question; answers outside the range should receive score 0.
-
-Output format (strictly follow):
-Analysis:
-<your analysis>
-
-Final Score:
-<an integer from 0 to 5>
-
-Question: {question}
-Ground truth answer: {gold_answer}
-Candidate answer: {prediction}
-Your response:"""
+from _common import JUDGE_PROMPT
 
 
 def llm_judge_score(

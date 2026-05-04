@@ -3,14 +3,13 @@
 EgoLifeQA evaluation script using WorldMM unified memory system.
 """
 
-import os
-import json
-import re
 import argparse
-import glob
-from typing import Dict, List, Any, Tuple, Optional
-from tqdm import tqdm
+import json
 import logging
+import os
+from typing import Any, Dict, List, Optional
+
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -19,240 +18,15 @@ from worldmm.embedding import EmbeddingModel
 from worldmm.llm import LLMModel, PromptTemplateManager
 from worldmm.memory import WorldMemory, QAResult, transform_timestamp
 
-
-def load_json(file_path: str) -> Any:
-    """Load JSON file."""
-    with open(file_path, 'r') as f:
-        return json.load(f)
-
-
-def _safe_model_name(model_name: str) -> str:
-    return model_name.replace("/", "_")
-
-
-def resolve_semantic_results_path(subject: str, retriever_model: str, respond_model: str) -> str:
-    """Resolve semantic consolidation file without hardcoded model names."""
-    semantic_dir = os.path.join("output", "metadata", "semantic_memory", subject)
-    candidates = []
-
-    # 1) Prefer explicit translation model if provided.
-    translation_model = os.getenv("TRANSLATION_MODEL")
-    if translation_model:
-        candidates.append(
-            os.path.join(
-                semantic_dir,
-                f"semantic_consolidation_results_{_safe_model_name(translation_model)}.json",
-            )
-        )
-
-    # 2) Then try the eval models.
-    for model_name in (retriever_model, respond_model):
-        candidates.append(
-            os.path.join(
-                semantic_dir,
-                f"semantic_consolidation_results_{_safe_model_name(model_name)}.json",
-            )
-        )
-
-    for path in candidates:
-        if os.path.exists(path):
-            logger.info(f"Using semantic results: {path}")
-            return path
-
-    # 3) Fallback to newest consolidation file.
-    pattern = os.path.join(semantic_dir, "semantic_consolidation_results_*.json")
-    fallback_files = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
-    if fallback_files:
-        logger.warning(
-            "No exact semantic file match for TRANSLATION_MODEL/retriever/respond model. "
-            f"Falling back to latest file: {fallback_files[0]}"
-        )
-        return fallback_files[0]
-
-    raise FileNotFoundError(
-        "No semantic consolidation file found. Expected one of: "
-        + ", ".join(candidates)
-        + f" or any file matching {pattern}"
-    )
-
-
-def normalize(text: str) -> str:
-    """Normalize text for comparison."""
-    if not text:
-        return ""
-    return text.lower().strip().rstrip(".,)")
-
-
-def extract_choice_letter(text: str) -> Optional[str]:
-    """Extracts A/B/C/D from a prediction, handling both clean and verbose outputs.
-
-    Strategy (first match wins):
-      1. If the entire text (stripped) is a single letter A-D → return it.
-      2. If the text starts with a letter pattern like "(C)" or "B." → return it.
-      3. Search for explicit answer phrases: "the answer is (C)", "Answer: B", etc.
-      4. Look for the *last* standalone A-D near the end of the text (models often
-         put the final answer at the very end after reasoning).
-    """
-    if not text:
-        return None
-
-    stripped = text.strip()
-
-    # 1. Entire text is a single letter
-    if re.fullmatch(r"[A-Da-d]", stripped):
-        return stripped.upper()
-
-    # 2. Starts with a letter pattern like "A", "A.", "(A)", "A) ..."
-    #    Require the letter to be followed by punctuation, whitespace, or end-of-string
-    #    to avoid matching words like "Based", "Alice", etc.
-    m = re.match(r"\(?([A-Da-d])(?:[\.\)\:,]|\s|$)", stripped)
-    if m:
-        return m.group(1).upper()
-
-    # 3. Explicit answer phrases (case-insensitive)
-    for pat in [
-        r"(?:the\s+)?answer\s+is\s*:?\s*\(?([A-Da-d])\)?",
-        r"(?:final\s+)?answer\s*:\s*\(?([A-Da-d])\)?",
-        r"(?:I\s+(?:would\s+)?(?:choose|pick|select|go\s+with))\s+\(?([A-Da-d])\)?",
-        r"\b([A-Da-d])\s+is\s+(?:the\s+)?(?:correct|best|most\s+supported)\b",
-    ]:
-        m = re.search(pat, stripped, re.IGNORECASE)
-        if m:
-            return m.group(1).upper()
-
-    # 4. Last standalone A-D in the text (word boundary on both sides)
-    all_letters = list(re.finditer(r"\b([A-Da-d])\b", stripped))
-    if all_letters:
-        # Prefer letters in the last 20% of the text
-        cutoff = int(len(stripped) * 0.8)
-        tail_letters = [m for m in all_letters if m.start() >= cutoff]
-        if tail_letters:
-            return tail_letters[-1].group(1).upper()
-
-    return None
-
-
-def evaluate_prediction(prediction: str, gold_letter: str, choices: Dict[str, str]) -> bool:
-    """
-    Evaluate if prediction matches the gold answer.
-    
-    Args:
-        prediction: Model's prediction
-        gold_letter: Correct answer letter (e.g., 'A', 'B', 'C', 'D')
-        choices: Dict of answer choices
-        
-    Returns:
-        True if prediction is correct
-    """
-    pred_norm = normalize(prediction)
-    gold_candidate = normalize(choices[gold_letter])
-
-    if pred_norm == gold_candidate:
-        return True
-
-    pred_letter = extract_choice_letter(prediction)
-    if pred_letter == gold_letter:
-        return True
-
-    full_patterns = [
-        normalize(f"{gold_letter}. {choices[gold_letter]}"),
-        normalize(f"({gold_letter}) {choices[gold_letter]}")
-    ]
-    if pred_norm in full_patterns:
-        return True
-
-    return False
-
-
-def find_30s_segment(target_timestamp: int, segments_30s: List[Dict[str, Any]]) -> Tuple[int, int]:
-    """
-    Find the 30s segment that contains the target timestamp.
-    
-    Args:
-        target_timestamp: Target timestamp as integer (format: day + time.zfill(8))
-        segments_30s: List of 30s segments
-    
-    Returns:
-        Tuple of (start_time, end_time) for the matching segment, or (0, 0) if not found
-    """
-    for segment in segments_30s:
-        date = segment.get('date', '')
-        start_time_raw = segment.get('start_time', 0)
-        end_time_raw = segment.get('end_time', 0)
-        
-        day = date.replace('DAY', '').replace('Day', '') if isinstance(date, str) else str(date)
-        
-        # Format times
-        if isinstance(start_time_raw, str):
-            start_time = int(day + start_time_raw.zfill(8))
-        elif isinstance(start_time_raw, int):
-            start_time = int(day + str(start_time_raw).zfill(8))
-        else:
-            continue
-        
-        if isinstance(end_time_raw, str):
-            end_time = int(day + end_time_raw.zfill(8))
-        elif isinstance(end_time_raw, int):
-            end_time = int(day + str(end_time_raw).zfill(8))
-        else:
-            continue
-        
-        # Check if target timestamp falls within this segment
-        if start_time <= target_timestamp <= end_time:
-            return (start_time, end_time)
-    
-    return (0, 0)
-
-
-def parse_target_time(row: Dict[str, Any], segments_30s: List[Dict[str, Any]]) -> List[Tuple[int, int]]:
-    """
-    Parse target time from row data.
-    
-    Args:
-        row: QA row data
-        segments_30s: List of 30s segments for finding time ranges
-        
-    Returns:
-        List of (start_time, end_time) tuples
-    """
-    target_time_list = []
-    
-    if "time" in row['target_time'] and row['target_time']["time"]:
-        time_str = row['target_time']["time"]
-        time_str_upper = time_str.upper()
-        
-        if "DAY" in time_str_upper:
-            # Parse range format: "11153417DAY1_11181201"
-            parts = re.split(r'DAY|Day', time_str, maxsplit=1)
-            if len(parts) == 2:
-                start_time_str = parts[0]
-                day_and_end = parts[1].split("_")
-                if len(day_and_end) == 2:
-                    end_day = day_and_end[0]
-                    end_time_str = day_and_end[1]
-                    start_day = row['target_time']["date"].replace('DAY', '').replace('Day', '')
-                    
-                    start_time = int(start_day + start_time_str.zfill(8))
-                    end_time = int(end_day + end_time_str.zfill(8))
-                    target_time_list.append((start_time, end_time))
-        else:
-            # Single timestamp - find its 30s segment
-            day = row['target_time']["date"].replace('DAY', '').replace('Day', '')
-            target_timestamp = int(day + time_str.zfill(8))
-            segment = find_30s_segment(target_timestamp, segments_30s)
-            if segment != (0, 0):
-                target_time_list.append(segment)
-    
-    elif "time_list" in row['target_time'] and row['target_time']["time_list"]:
-        # Multiple timestamps
-        day = row['target_time']["date"].replace('DAY', '').replace('Day', '')
-        for time_str in row['target_time']["time_list"]:
-            target_timestamp = int(day + time_str.zfill(8))
-            segment = find_30s_segment(target_timestamp, segments_30s)
-            if segment != (0, 0):
-                target_time_list.append(segment)
-    
-    return target_time_list
+from _common import (
+    load_json,
+    resolve_semantic_results_path,
+    normalize,
+    extract_choice_letter,
+    evaluate_prediction,
+    find_30s_segment,
+    parse_target_time,
+)
 
 
 def main():

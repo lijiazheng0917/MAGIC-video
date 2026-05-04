@@ -38,7 +38,7 @@ def call_llm(client, model, prompt, max_tokens=4000, max_retries=3):
                             depth -= 1
                             if depth == 0:
                                 try: return json.loads(raw[start:i+1])
-                                except: break
+                                except json.JSONDecodeError: break
             logger.warning(f"JSON parse error (attempt {attempt+1})")
             time.sleep(1)
         except Exception as e:
@@ -111,7 +111,7 @@ Daily activities:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--subject", default="A1_JAKE")
-    parser.add_argument("--model", default="openai/gpt-5.4-mini")
+    parser.add_argument("--model", default="openai/gpt-oss-120b")
     parser.add_argument("--data-dir", default="data/EgoLife")
     parser.add_argument("--output-dir", default="output/metadata/storylines")
     parser.add_argument("--resume", action="store_true")

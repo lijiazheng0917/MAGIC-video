@@ -4,7 +4,9 @@ Script to test the semantic consolidation functionality.
 Loads semantic extraction results and applies semantic consolidation across timestamps.
 """
 
+import argparse
 import json
+import logging
 import os
 from typing import Dict, Any
 from tqdm import tqdm
@@ -13,10 +15,10 @@ from worldmm.memory.semantic import SemanticConsolidation
 from worldmm.embedding import EmbeddingModel
 from worldmm.llm import LLMModel
 
-import logging
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+VALID_SUBJECTS = ["A1_JAKE", "A2_ALICE", "A3_TASHA", "A4_LUCIA", "A5_KATRINA", "A6_SHURE"]
 
 def load_semantic_extraction_results(json_file: str) -> Dict[str, Any]:
     """Load semantic extraction results from JSON file."""
@@ -24,24 +26,25 @@ def load_semantic_extraction_results(json_file: str) -> Dict[str, Any]:
         data = json.load(f)
     return data
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--subject", required=True, choices=VALID_SUBJECTS,
+                        help="EgoLife subject ID (e.g., A1_JAKE)")
+    parser.add_argument("--input-file", default=None,
+                        help="Path to semantic_extraction_results_*.json (default derived from --subject)")
+    parser.add_argument("--output-dir", default=None,
+                        help="Output directory (default: output/metadata/semantic_memory/{subject})")
+    return parser.parse_args()
+
+
 def main():
     """Main processing function."""
-    # Configuration
-
-    NUM_TO_NAME = {
-        1: "A1_JAKE",
-        2: "A2_ALICE",
-        3: "A3_TASHA",
-        4: "A4_LUCIA",
-        5: "A5_KATRINA",
-        6: "A6_SHURE"
-    }
-
-    index = 1
+    args = parse_args()
+    subject = args.subject
     model_name = os.getenv("TRANSLATION_MODEL", "openai/gpt-oss-120b")
     safe_model_name = model_name.replace("/", "_")
-    semantic_results_file = f"output/metadata/semantic_memory/{NUM_TO_NAME[index]}/semantic_extraction_results_{safe_model_name}.json"
-    output_dir = f"output/metadata/semantic_memory/{NUM_TO_NAME[index]}"
+    semantic_results_file = args.input_file or f"output/metadata/semantic_memory/{subject}/semantic_extraction_results_{safe_model_name}.json"
+    output_dir = args.output_dir or f"output/metadata/semantic_memory/{subject}"
     
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)

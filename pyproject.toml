@@ -8,7 +8,6 @@ version = "0.1.1"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "pip",
     "torch==2.7.1",
     "torchcodec==0.3",
     "torchvision==0.22.1",
@@ -17,21 +16,34 @@ dependencies = [
     "sentence-transformers",
     "accelerate",
     "peft",
-    "apex",
-    "flash-attn==2.8.0.post2",
     "openai",
     "tenacity",
     "decord",
     "faster-whisper",
     "pysrt",
     "qwen-vl-utils",
-    "scikit-image",
+    "scikit-learn",
     "opencv-python",
     "igraph",
     "wheel",
     "faiss-gpu-cu12",
+    "numpy",
+    "tqdm",
+    "pydantic",
+    "psutil",
+    "rank-bm25",
+    "imageio-ffmpeg",
+    "filelock",
     "hipporag",
     "egorag"
+]
+
+[project.optional-dependencies]
+# Optional GPU acceleration. Install with: `uv sync --extra gpu`
+# flash-attn requires a CUDA toolchain and matching torch; build is gated by
+# `no-build-isolation-package` below.
+gpu = [
+    "flash-attn==2.8.0.post2",
 ]
 
 [[tool.uv.index]]

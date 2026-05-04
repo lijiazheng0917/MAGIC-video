@@ -1,13 +1,13 @@
-# MAGIC-video
+# MAGIC-Video
 
-> We introduce a **Unified Multimodal Graph** that indexes episodic, semantic, and visual content as a single graph and retrieves across modalities via cross-modal personalized PageRank, together with **Temporal Augmentation** (topic chains and storyline chains) that injects long-range entity and activity facts into the retrieved context.
+> **MAGIC-Video** is a training-free framework for ultra-long video reasoning (days to weeks of footage) built around a **M**ultimod**A**l memory **G**raph with **I**nterleaved narrative **C**hain. The **Multimodal Memory Graph (MMG)** unifies episodic captions, named entities, semantic triples, and visual clips into a single heterogeneous graph connected by six typed cross-modal and temporal edges, supporting cross-modal retrieval via a single Personalized PageRank pass. The **Narrative Memory Chain (NMC)** complements bottom-up graph aggregation with a top-down distillation that scans the whole video offline to surface per-entity biographies and multi-day activity events as coherent cross-time threads. At inference time, an agentic loop alternates between search and answer, interleaving graph retrieval with narrative fact injection — covering both the modality and time dimensions of ultra-long video in a single retrieval pipeline.
 
-Supported benchmarks: **EgoLifeQA** (MCQ), **Ego-R1** (MCQ), **MM-Lifelong** (open-ended).
+On three ultra-long video benchmarks, MAGIC-Video outperforms the strongest prior agentic systems by **+10.1** points on **EgoLifeQA**, **+7.4** points on **Ego-R1**, and **+5.9** points on **MM-Lifelong**.
 
 <p align="center">
   <img src="figures/fig2.png" width="900" alt="Method overview">
 </p>
-<p align="center"><em>Method overview. Offline (left): video → 30s captions → Multimodal Memory Graph (MMG) → Narrative Memory Chains (NMC). Online (right): query-time cross-modal PPR over MMG plus narrative injection from NMC into the agent context.</em></p>
+<p align="center"><em>Method overview. Offline (left): video → multi-granularity captions → Multimodal Memory Graph (MMG) and Narrative Memory Chains (NMC). Online (right): an agentic loop alternates cross-modal PPR over MMG with narrative fact injection from NMC into the model context.</em></p>
 
 ---
 
@@ -108,23 +108,23 @@ python -m worldmm.memory.episodic.multiscale \
     --json_path data/EgoLife/EgoLifeCap/A1_JAKE/A1_JAKE_30sec.json \
     --diary_dir .cache/events_diary \
     --save_path data/EgoLife/EgoLifeCap
-python preprocess/egolife/episodic/extract_episodic_triples.py --person A1_JAKE
+python preprocess/egolife/episodic/extract_episodic_triples.py --subject A1_JAKE
 
 # [API] Semantic memory triples
-python preprocess/egolife/semantic/extract_semantic_triples.py --person A1_JAKE
+python preprocess/egolife/semantic/extract_semantic_triples.py --subject A1_JAKE
 # [GPU + API] Consolidation (loads Qwen3-Embedding-4B for clustering + LLM for canonicalization)
-python preprocess/egolife/semantic/consolidate_semantic_memory.py --person A1_JAKE
+python preprocess/egolife/semantic/consolidate_semantic_memory.py --subject A1_JAKE
 
 # [GPU] Visual memory (VLM2Vec embeddings, single GPU)
-CUDA_VISIBLE_DEVICES=0 python preprocess/egolife/visual/extract_visual_features.py --person A1_JAKE --num_frames 16
-# Multi-GPU alternative: bash preprocess/egolife/visual/extract_visual_features.sh --person A1_JAKE --gpu 0,1,2,3 --num_frames 16
+CUDA_VISIBLE_DEVICES=0 python preprocess/egolife/visual/extract_visual_features.py --subject A1_JAKE --num_frames 16
+# Multi-GPU alternative: bash preprocess/egolife/visual/extract_visual_features.sh --subject A1_JAKE --gpu 0,1,2,3 --num_frames 16
 ```
 
 ### 2.4 Build unified multimodal graph `[GPU]`
 
 ```bash
 python preprocess/build_unified_graph.py \
-    --dataset egolife --person A1_JAKE \
+    --dataset egolife --subject A1_JAKE \
     --embedding-model Qwen/Qwen3-Embedding-4B \
     --embedding-device cuda
 ```
@@ -216,7 +216,7 @@ For each broadcast `$vid`, run the full pipeline (ASR → VLM caption → merge 
 
 ```bash
 python preprocess/mmlifelong/preprocess_video.py \
-    --video-ids $vid \
+    --video-id $vid \
     --whisper-model large-v3-turbo \
     --llm-model openai/gpt-oss-120b
 ```
@@ -228,23 +228,23 @@ The script writes checkpoints after each stage, so reruns skip finished work.
 
 ```bash
 # [GPU] Whisper ASR
-python preprocess/mmlifelong/preprocess_video.py --video-ids $vid --caption-mode asr \
+python preprocess/mmlifelong/preprocess_video.py --video-id $vid --caption-mode asr \
     --skip-openie --skip-semantic --skip-visual
 
 # [API] VLM caption via OpenRouter
-python preprocess/mmlifelong/preprocess_video.py --video-ids $vid --caption-mode vlm \
+python preprocess/mmlifelong/preprocess_video.py --video-id $vid --caption-mode vlm \
     --skip-whisper --skip-openie --skip-semantic --skip-visual
 
 # [API] Merge ASR + VLM into multi-scale captions
-python preprocess/mmlifelong/preprocess_video.py --video-ids $vid --caption-mode merge \
+python preprocess/mmlifelong/preprocess_video.py --video-id $vid --caption-mode merge \
     --skip-whisper --skip-vlm --skip-openie --skip-semantic --skip-visual
 
 # [GPU + API] OpenIE + semantic extraction + consolidation
-python preprocess/mmlifelong/preprocess_video.py --video-ids $vid --caption-mode merge \
+python preprocess/mmlifelong/preprocess_video.py --video-id $vid --caption-mode merge \
     --skip-whisper --skip-vlm --skip-captions --skip-visual
 
 # [GPU] VLM2Vec visual embeddings
-python preprocess/mmlifelong/preprocess_video.py --video-ids $vid \
+python preprocess/mmlifelong/preprocess_video.py --video-id $vid \
     --skip-whisper --skip-vlm --skip-captions --skip-openie --skip-semantic
 ```
 </details>
@@ -262,8 +262,8 @@ python preprocess/build_unified_graph.py \
 ### 4.4 Build temporal augmentation (per video) `[API]`
 
 ```bash
-python preprocess/mmlifelong/extract_topic_chains.py --video-ids $vid --model openai/gpt-oss-120b
-python preprocess/mmlifelong/extract_storylines.py  --video-ids $vid --model openai/gpt-oss-120b
+python preprocess/mmlifelong/extract_topic_chains.py --video-id $vid --model openai/gpt-oss-120b
+python preprocess/mmlifelong/extract_storylines.py  --video-id $vid --model openai/gpt-oss-120b
 ```
 
 ### 4.5 Evaluate `[GPU + API]`
@@ -310,13 +310,4 @@ See the paper for ablations, judge-comparison tables, and chain-injection breakd
 
 Built on [WorldMM](https://github.com/wgcyeo/WorldMM), [HippoRAG](https://github.com/OSU-NLP-Group/HippoRAG), and [VLM2Vec](https://github.com/TIGER-AI-Lab/VLM2Vec). Datasets: [EgoLife](https://huggingface.co/datasets/lmms-lab/EgoLife) (LMMs-Lab), [Ego-R1](https://huggingface.co/datasets/Ego-R1/Ego-R1-Data), [MM-Lifelong](https://huggingface.co/datasets/CG-Bench/MM-Lifelong) (CG-Bench).
 
-## 7. Citation
 
-```bibtex
-@inproceedings{TODO,
-  title     = {TODO (our NeurIPS 2026 paper)},
-  author    = {TODO},
-  booktitle = {NeurIPS},
-  year      = {2026}
-}
-```

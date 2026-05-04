@@ -4,7 +4,9 @@ Script to process EgoLifeCap captions using OpenIE functionality.
 Extracts Named Entities and Triples from the caption text, then reformats the results to timestamp-based structure.
 """
 
+import argparse
 import json
+import logging
 import os
 from typing import List, Dict, Any
 
@@ -12,10 +14,10 @@ from worldmm.memory.episodic.openie import OpenIE
 from worldmm.memory.episodic.utils import compute_mdhash_id
 from worldmm.llm import LLMModel
 
-import logging
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+VALID_SUBJECTS = ["A1_JAKE", "A2_ALICE", "A3_TASHA", "A4_LUCIA", "A5_KATRINA", "A6_SHURE"]
 
 
 def load_caption_data(json_file: str) -> List[Dict]:
@@ -78,22 +80,23 @@ def create_episodic_triples_results(caption_data: List[Dict],
     }
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--subject", required=True, choices=VALID_SUBJECTS,
+                        help="EgoLife subject ID (e.g., A1_JAKE)")
+    parser.add_argument("--input-file", default=None,
+                        help="Path to {subject}_30sec.json (default: data/EgoLife/EgoLifeCap/{subject}/{subject}_30sec.json)")
+    parser.add_argument("--output-dir", default=None,
+                        help="Output directory (default: output/metadata/episodic_memory/{subject})")
+    return parser.parse_args()
+
+
 def main():
     """Main processing function."""
-    # Configuration
-
-    NUM_TO_NAME = {
-        1: "A1_JAKE",
-        2: "A2_ALICE",
-        3: "A3_TASHA",
-        4: "A4_LUCIA",
-        5: "A5_KATRINA",
-        6: "A6_SHURE"
-    }
-
-    index = 1
-    input_file = f"data/EgoLife/EgoLifeCap/{NUM_TO_NAME[index]}/{NUM_TO_NAME[index]}_30sec.json"
-    output_dir = f"output/metadata/episodic_memory/{NUM_TO_NAME[index]}"
+    args = parse_args()
+    subject = args.subject
+    input_file = args.input_file or f"data/EgoLife/EgoLifeCap/{subject}/{subject}_30sec.json"
+    output_dir = args.output_dir or f"output/metadata/episodic_memory/{subject}"
     
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)

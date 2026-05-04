@@ -132,14 +132,14 @@ def main():
                        help='Total number of splits for parallel processing')
     parser.add_argument('--num_frames', type=int, default=16,
                        help='Number of frames to extract from each video')
-    parser.add_argument('--person', type=str, default='A1_JAKE',
-                       help='Person to process (e.g., A1_JAKE)')
+    parser.add_argument('--subject', type=str, default='A1_JAKE',
+                       help='Subject ID to process (e.g., A1_JAKE)')
     parser.add_argument('--merge', action='store_true',
                        help='Merge split files instead of processing videos')
-    
+
     args = parser.parse_args()
-    
-    name = args.person
+
+    name = args.subject
     
     # Handle merge mode
     if args.merge:

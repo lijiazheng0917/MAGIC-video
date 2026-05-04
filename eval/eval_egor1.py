@@ -4,19 +4,19 @@ Ego-R1 Bench evaluation script using WorldMM.
 
 Ego-R1 Bench (arXiv 2506.13654) uses the same EgoLife video data and
 the same 4-option multiple-choice format as EgoLifeQA, but provides
-300 separate QA pairs (150 manual + 150 gemini-generated).
+50 separate QA pairs (25 manual + 25 gemini-generated).
 
 This script intentionally mirrors eval.py so it can share the same
 WorldMemory pipeline; only the data-loading and reporting differ.
 """
 
-import os
-import json
-import glob
 import argparse
-from typing import Dict, List, Any, Optional
-from tqdm import tqdm
+import json
 import logging
+import os
+from typing import Any, Dict, List, Optional
+
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -25,8 +25,7 @@ from worldmm.embedding import EmbeddingModel
 from worldmm.llm import LLMModel, PromptTemplateManager
 from worldmm.memory import WorldMemory, QAResult
 
-# Reuse helpers from eval_egolife.py (extract_choice_letter, evaluate_prediction, etc.)
-from eval_egolife import (
+from _common import (
     load_json,
     extract_choice_letter,
     evaluate_prediction,

@@ -48,7 +48,7 @@ def call_llm(client, model, prompt, max_tokens=4000, max_retries=3):
                             depth -= 1
                             if depth == 0:
                                 try: return json.loads(raw[start:i+1])
-                                except: break
+                                except json.JSONDecodeError: break
             logger.warning(f"JSON parse error (attempt {attempt+1}), raw[:300]={raw[:300] if raw else 'None'}")
             time.sleep(1)
         except Exception as e:

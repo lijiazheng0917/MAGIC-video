@@ -225,9 +225,6 @@ preprocess/visualize_graph.py
 # HippoRAG upstream reproducibility data (not used by WorldMM)
 src/HippoRAG/reproduce/
 
-# Local UV environment marker
-.python-version
-
 # OS / editor backups
 .DS_Store
 *.swp
@@ -253,3 +250,4 @@ cscope.out
 .env.local
 *.key
 *credentials*
+.smoke_test/

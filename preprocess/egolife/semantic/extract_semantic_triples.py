@@ -5,7 +5,9 @@ Groups caption data into chunks of `period`, retrieves corresponding OpenIE resu
 and extracts semantic knowledge from them.
 """
 
+import argparse
 import json
+import logging
 import os
 from typing import List, Dict, Any
 
@@ -13,11 +15,10 @@ from worldmm.memory.semantic import SemanticExtraction
 from worldmm.memory.episodic.utils import compute_mdhash_id
 from worldmm.llm import LLMModel
 
-import logging
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+VALID_SUBJECTS = ["A1_JAKE", "A2_ALICE", "A3_TASHA", "A4_LUCIA", "A5_KATRINA", "A6_SHURE"]
 period = 10
 
 def load_caption_data(json_file: str) -> List[Dict]:
@@ -75,25 +76,29 @@ def group_captions_and_get_openie_triples(caption_data: List[Dict],
     return episodic_triples_batch
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--subject", required=True, choices=VALID_SUBJECTS,
+                        help="EgoLife subject ID (e.g., A1_JAKE)")
+    parser.add_argument("--caption-file", default=None,
+                        help="Path to {subject}_30sec.json (default: data/EgoLife/EgoLifeCap/{subject}/{subject}_30sec.json)")
+    parser.add_argument("--openie-file", default=None,
+                        help="Path to openie_results_*.json (default derived from --subject)")
+    parser.add_argument("--output-dir", default=None,
+                        help="Output directory (default: output/metadata/semantic_memory/{subject})")
+    return parser.parse_args()
+
+
 def main():
     """Main processing function."""
-    # Configuration
-    NUM_TO_NAME = {
-        1: "A1_JAKE",
-        2: "A2_ALICE",
-        3: "A3_TASHA",
-        4: "A4_LUCIA",
-        5: "A5_KATRINA",
-        6: "A6_SHURE"
-    }
-
-    index = 1
-
-    caption_file = f"data/EgoLife/EgoLifeCap/{NUM_TO_NAME[index]}/{NUM_TO_NAME[index]}_30sec.json"
+    args = parse_args()
+    subject = args.subject
     model_name = os.getenv("TRANSLATION_MODEL", "openai/gpt-oss-120b")
     safe_model_name = model_name.replace("/", "_")
-    openie_results_file = f"output/metadata/episodic_memory/{NUM_TO_NAME[index]}/openie_results_{safe_model_name}.json"
-    output_dir = f"output/metadata/semantic_memory/{NUM_TO_NAME[index]}"
+
+    caption_file = args.caption_file or f"data/EgoLife/EgoLifeCap/{subject}/{subject}_30sec.json"
+    openie_results_file = args.openie_file or f"output/metadata/episodic_memory/{subject}/openie_results_{safe_model_name}.json"
+    output_dir = args.output_dir or f"output/metadata/semantic_memory/{subject}"
     
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)

@@ -2,12 +2,12 @@
 ###############################################################################
 # Script to extract visual features with automatic split processing and merge
 # Usage:
-#   ./extract_visual_features.sh --person <person> --gpu <gpu_list> [--num_frames <frames>]
+#   ./extract_visual_features.sh --subject <person> --gpu <gpu_list> [--num_frames <frames>]
 #
 # Examples:
-#   ./extract_visual_features.sh --person A1_JAKE --gpu 0,1,2,3 --num_frames 16
-#   ./extract_visual_features.sh --person A1_JAKE --gpu 0,0,1,1,2,2 --num_frames 5
-#   ./extract_visual_features.sh --person A1_JAKE --gpu 0
+#   ./extract_visual_features.sh --subject A1_JAKE --gpu 0,1,2,3 --num_frames 16
+#   ./extract_visual_features.sh --subject A1_JAKE --gpu 0,0,1,1,2,2 --num_frames 5
+#   ./extract_visual_features.sh --subject A1_JAKE --gpu 0
 ###############################################################################
 
 set -euo pipefail  # Exit on error; fail pipelines when any command fails
@@ -33,15 +33,15 @@ cleanup() {
 trap cleanup SIGINT SIGTERM
 
 # Default values
-PERSON="A1_JAKE"
+SUBJECT="A1_JAKE"
 GPU_LIST=""
 NUM_FRAMES=16
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --person)
-            PERSON="$2"
+        --subject)
+            SUBJECT="$2"
             shift 2
             ;;
         --gpu)
@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 --person <person> --gpu <gpu_list> [--num_frames <frames>]"
+            echo "Usage: $0 --subject <person> --gpu <gpu_list> [--num_frames <frames>]"
             exit 1
             ;;
     esac
@@ -69,7 +69,7 @@ NUM_SPLITS=${#GPUS[@]}
 echo "=========================================="
 echo "Visual Feature Extraction"
 echo "=========================================="
-echo "Person:      $PERSON"
+echo "Subject:      $SUBJECT"
 echo "GPU List:    $GPU_LIST"
 echo "Num Splits:  $NUM_SPLITS"
 echo "Num Frames:  $NUM_FRAMES"
@@ -81,7 +81,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/../.."  # Go to project root
 
 # Create log directory (align with 2_preprocess.sh pattern)
-LOG_DIR=".log/preprocess/${PERSON}"
+LOG_DIR=".log/preprocess/${SUBJECT}"
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 echo "Log directory: $LOG_DIR"
@@ -93,7 +93,7 @@ if [ "$NUM_SPLITS" -eq 1 ]; then
     echo "Running on single GPU ${GPUS[0]} (no splitting)..."
     echo "Log file: $LOG_FILE"
     CUDA_VISIBLE_DEVICES=${GPUS[0]} python preprocess/egolife/visual/extract_visual_features.py \
-        --person "$PERSON" \
+        --subject "$SUBJECT" \
         --num_frames "$NUM_FRAMES" 2>&1 | tee "$LOG_FILE"
     
     echo ""
@@ -116,7 +116,7 @@ else
         
         # Run in background with GPU assignment and redirect output to log file
         CUDA_VISIBLE_DEVICES=$GPU_ID python preprocess/egolife/visual/extract_visual_features.py \
-            --person "$PERSON" \
+            --subject "$SUBJECT" \
             --split_id "$i" \
             --num_splits "$NUM_SPLITS" \
             --num_frames "$NUM_FRAMES" \
@@ -163,7 +163,7 @@ else
     
     # Merge the split files
     python preprocess/egolife/visual/extract_visual_features.py \
-        --person "$PERSON" \
+        --subject "$SUBJECT" \
         --num_splits "$NUM_SPLITS" \
         --merge 2>&1 | tee "$LOG_FILE"
     
@@ -172,5 +172,5 @@ else
 fi
 
 echo ""
-echo "Output file: output/metadata/visual_memory/$PERSON/visual_embeddings.pkl"
+echo "Output file: output/metadata/visual_memory/$SUBJECT/visual_embeddings.pkl"
 echo ""

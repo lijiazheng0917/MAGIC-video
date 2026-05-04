@@ -5,9 +5,12 @@ Replaces the three independent retrieve_from_* methods when
 retrieval_backend == "unified_graph".
 """
 
+import json
 import logging
 import os
+import re
 import threading
+from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
@@ -82,7 +85,6 @@ class UnifiedMemory:
         logger.info(f"Graph loaded: {self._full_graph.stats()}")
 
         if event_facts_path and os.path.exists(event_facts_path):
-            import json
             facts_data = json.load(open(event_facts_path))
             injected = 0
             for nid, node in self._full_graph.nodes.items():
@@ -104,8 +106,7 @@ class UnifiedMemory:
         self._topic_facts = {}   # entity → [{"time": ..., "fact": ...}]
 
         if topic_chain_facts_path and os.path.exists(topic_chain_facts_path):
-            import json as _json3
-            raw = _json3.load(open(topic_chain_facts_path))
+            raw = json.load(open(topic_chain_facts_path))
             for entity, data in raw.items():
                 if data.get("has_lifecycle") and data.get("facts"):
                     self._topic_facts[entity] = data["facts"]
@@ -114,13 +115,12 @@ class UnifiedMemory:
 
         # Load event chains (cross-time storylines)
         if storyline_path and os.path.exists(storyline_path):
-            import json as _json5, re as _re3
-            raw = _json5.load(open(storyline_path))
+            raw = json.load(open(storyline_path))
             def _parse_hms(t, as_seconds=False):
                 """Parse 'HH:MM:SS' or 'HH:MM'. If as_seconds, return total seconds
                 (MM-Lifelong / Video-MME float-second nodes); otherwise return
                 DHHMMSSFF time-component (HH*1e6+MM*1e4+SS*100) for EgoLife nodes."""
-                m = _re3.match(r'(\d{1,2}):(\d{2}):?(\d{2})?', t)
+                m = re.match(r'(\d{1,2}):(\d{2}):?(\d{2})?', t)
                 if not m:
                     return 0
                 h, mn, s = int(m.group(1)), int(m.group(2)), int(m.group(3) or 0)
@@ -134,7 +134,7 @@ class UnifiedMemory:
                 steps_with_ts = []
                 for step in sl.get("steps", []):
                     day = step.get("day", "")
-                    dm = _re3.match(r'DAY(\d+)', day)
+                    dm = re.match(r'DAY(\d+)', day)
                     day_prefix = int(dm.group(1)) * 100000000 if dm else 0
                     as_seconds = (day_prefix == 0)
                     st = step.get("start_time", "")
@@ -188,8 +188,6 @@ class UnifiedMemory:
         Returns list of {"time": str, "fact": str, "label": str} dicts,
         sorted by time.
         """
-        import re
-
         if not self._topic_facts and not self._storylines:
             return []
 
@@ -435,7 +433,6 @@ class UnifiedMemory:
         #   - EgoLife: "DAY1 11:09:43"
         #   - MM-Lifelong / Video-MME: "00:10:30" (relative seconds within a video)
         def sort_key(f):
-            import re
             t = f.get("time", "")
             m = re.match(r'DAY(\d+)\s+(\d{1,2}):(\d{2}):?(\d{2})?', t)
             if m:
@@ -458,7 +455,6 @@ class UnifiedMemory:
         _TOPIC_SIM_THRESHOLD = topic_sim_threshold
         _embedding_keep_topics = set()  # topics that pass embedding check
         if _topic_embedding_set and embedding_model and query_text and embedding_slots > 0:
-            import numpy as np
             # Collect time-filtered facts text per Tier-2 candidate topic
             # (read directly from source, not from all_facts).
             topic_candidate_facts = {}
@@ -548,7 +544,6 @@ class UnifiedMemory:
             _accepted_storyline_names.add(self._storylines[sl_idx]["name"])
 
         if _embedding_sl_candidates and embedding_model and query_text and embedding_sl_slots > 0:
-            import numpy as np
             sl_idx_to_name = {idx: self._storylines[idx]["name"] for idx in _embedding_sl_candidates}
 
             # NOTE: previous version read storyline texts from all_facts (which only
@@ -707,83 +702,6 @@ class UnifiedMemory:
         logger.info(f"Active graph ready: {sub.stats()}")
 
     # ------------------------------------------------------------------
-    # Query-matched fact retrieval
-    # ------------------------------------------------------------------
-
-    def match_facts(self, query: str, top_k: int = 5) -> str:
-        """
-        Match query against event fact summaries and chain key_facts.
-        Returns a formatted string of top-K relevant facts to prepend to context.
-
-        Only returns facts that are genuinely relevant to the query,
-        avoiding the noise from attaching facts to every episode.
-        """
-        if self._active_graph is None:
-            return ""
-
-        import re
-        query_lower = query.lower()
-        query_words = set(re.findall(r'[a-z]+', query_lower))
-        query_words -= {'the','a','an','is','was','were','are','in','on','at','to',
-                        'and','of','for','with','from','what','who','when','where',
-                        'how','did','do','does','which','that','this','i','my','me',
-                        'we','our','last','time','first','about'}
-        query_words = {w for w in query_words if len(w) >= 3}
-
-        if not query_words:
-            return ""
-
-        # Score event facts by keyword overlap with query
-        fact_scores = []  # (score, text)
-        for nid, node in self._active_graph.nodes.items():
-            if node.node_type != NodeType.EPISODE:
-                continue
-            fact = node.metadata.get("event_fact")
-            if not fact or not fact.get("summary"):
-                continue
-            summary = fact["summary"].lower()
-            overlap = len(query_words & set(re.findall(r'[a-z]+', summary)))
-            if overlap >= 2:  # at least 2 query words match
-                # Build display text
-                parts = [f"[Event] {fact['summary']}"]
-                participants = fact.get("participants", [])
-                if participants:
-                    roles = "; ".join(f"{p['name']}={p['role']}" for p in participants
-                                      if isinstance(p, dict) and 'name' in p and 'role' in p)
-                    if roles:
-                        parts.append(f"  Roles: {roles}")
-                fact_scores.append((overlap, "\n".join(parts)))
-
-        # Score chain facts by keyword overlap
-        chain_scores = []
-        seen_chains = set()
-        for nid, node in self._active_graph.nodes.items():
-            if node.node_type != NodeType.EPISODE:
-                continue
-            for cf in node.metadata.get("chain_facts", []):
-                topic = cf.get("topic", "")
-                if topic in seen_chains:
-                    continue
-                summary = cf.get("summary", "").lower()
-                key_facts = cf.get("key_facts", [])
-                combined = summary + " " + " ".join(key_facts).lower()
-                overlap = len(query_words & set(re.findall(r'[a-z]+', combined)))
-                if overlap >= 2:
-                    seen_chains.add(topic)
-                    facts_str = "; ".join(key_facts[:3])
-                    chain_scores.append((overlap, f"[Cross-episode: {topic}] {facts_str}"))
-
-        # Take top-K by overlap score
-        all_scored = sorted(fact_scores + chain_scores, key=lambda x: -x[0])
-        top = all_scored[:top_k]
-
-        if not top:
-            return ""
-
-        lines = [item[1] for item in top]
-        return "\n".join(lines)
-
-    # ------------------------------------------------------------------
     # Retrieve
     # ------------------------------------------------------------------
 
@@ -846,10 +764,8 @@ class UnifiedMemory:
         max_frames_per_clip: int = 16,
         max_total_frames: int = 64,
         _current_total_frames: int = 0,
-        structured_output: bool = False,
     ) -> List[RetrievedItem]:
-        """
-        Convert (GraphNode, score) pairs to RetrievedItem objects compatible
+        """Convert (GraphNode, score) pairs to RetrievedItem objects compatible
         with WorldMemory._render_retrieved_items_for_qa().
 
         Node type mapping:
@@ -857,21 +773,6 @@ class UnifiedMemory:
           SEMANTIC           → memory_type="semantic",  content=str
           VISUAL_CLIP        → memory_type="visual",    content=List[PIL.Image]
         """
-        if structured_output:
-            return self._format_results_structured(
-                results, visual_memory, fps, max_frames_per_clip,
-                max_total_frames, _current_total_frames,
-            )
-        return self._format_results_default(
-            results, visual_memory, fps, max_frames_per_clip,
-            max_total_frames, _current_total_frames,
-        )
-
-    def _format_results_default(
-        self, results, visual_memory, fps, max_frames_per_clip,
-        max_total_frames, _current_total_frames,
-    ) -> List[RetrievedItem]:
-        """Format retrieval results into RetrievedItem list (PPR score order)."""
         items: List[RetrievedItem] = []
         total_frames = _current_total_frames
 
@@ -952,92 +853,6 @@ class UnifiedMemory:
                     # Attach time info so round history can sort correctly
                     vis_item._start_ts = node.start_ts
                     items.append(vis_item)
-
-        return items
-
-    def _format_results_structured(
-        self, results, visual_memory, fps, max_frames_per_clip,
-        max_total_frames, _current_total_frames,
-    ) -> List[RetrievedItem]:
-        """Structured format: episodes (by time) → visual → semantic (grouped).
-
-        Gives the responder coherent narrative first, then visual evidence,
-        then supplementary facts.
-        """
-        episode_nodes = []
-        visual_nodes = []
-        semantic_nodes = []
-
-        for node, _score in results:
-            if node.node_type == NodeType.ENTITY:
-                continue
-            elif node.node_type == NodeType.EPISODE:
-                episode_nodes.append(node)
-            elif node.node_type == NodeType.VISUAL_CLIP:
-                visual_nodes.append(node)
-            elif node.node_type == NodeType.SEMANTIC:
-                semantic_nodes.append(node)
-
-        # Sort episodes by time for coherent reading order
-        episode_nodes.sort(key=lambda n: n.start_ts)
-
-        items: List[RetrievedItem] = []
-        total_frames = _current_total_frames
-
-        # 1. Episode captions (coherent narrative)
-        for node in episode_nodes:
-            items.append(RetrievedItem(
-                memory_type = "episodic",
-                content     = node.display_text(),
-                query       = "",
-                round_num   = 0,
-            ))
-
-        # 2. Visual clips (caption + frames)
-        for node in visual_nodes:
-            items.append(RetrievedItem(
-                memory_type = "episodic",
-                content     = node.display_text(),
-                query       = "",
-                round_num   = 0,
-            ))
-            remaining = max_total_frames - total_frames
-            if remaining <= 0:
-                continue
-            video_path = node.metadata.get("video_path")
-            if not video_path:
-                continue
-            clip_cap = min(max_frames_per_clip, remaining)
-            start_sec = node.metadata.get("start_sec")
-            end_sec = node.metadata.get("end_sec")
-            frame_entries = visual_memory._extract_frames(
-                video_path = video_path,
-                fps        = fps,
-                max_frames = clip_cap,
-                start_sec  = start_sec,
-                end_sec    = end_sec,
-            )
-            pil_images: List[Image.Image] = [
-                fe.frame for fe in frame_entries if fe.frame is not None
-            ]
-            if pil_images:
-                total_frames += len(pil_images)
-                items.append(RetrievedItem(
-                    memory_type = "visual",
-                    content     = pil_images,
-                    query       = "",
-                    round_num   = 0,
-                ))
-
-        # 3. Semantic triples (grouped as supplementary facts)
-        if semantic_nodes:
-            triple_texts = [node.display_text() for node in semantic_nodes]
-            items.append(RetrievedItem(
-                memory_type = "semantic",
-                content     = "Related facts:\n" + "\n".join(triple_texts),
-                query       = "",
-                round_num   = 0,
-            ))
 
         return items
 
@@ -1145,7 +960,6 @@ class MultiGraphUnifiedMemory:
         """Per-video chain injection: run each video's chain matching on its own results."""
         all_facts = []
         # Group results by broadcast_id
-        from collections import defaultdict
         bid_results = defaultdict(list)
         for node, score in results:
             bid = getattr(node, '_broadcast_id', None)

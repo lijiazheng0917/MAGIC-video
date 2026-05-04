@@ -464,6 +464,17 @@ class MultimodalGraph:
         # Cache embedding matrices for fast similarity search
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
+        # Probe text embedding dim from the first node that has one. We don't
+        # know it ahead of time because users may swap the embedding model.
+        emb_dim: Optional[int] = None
+        for nid in node_ids:
+            node = self.nodes[nid]
+            if node.text_embedding is not None:
+                emb_dim = int(node.text_embedding.shape[-1])
+                break
+        if emb_dim is None:
+            emb_dim = 2560  # fall back to Qwen3-Embedding-4B default
+
         text_embs = []
         for nid in node_ids:
             node = self.nodes[nid]
@@ -473,13 +484,11 @@ class MultimodalGraph:
             # with low sentence-level similarity to queries → zero out so
             # they don't waste seed slots; they still serve as PPR bridges.
             if node.node_type in (NodeType.VISUAL_CLIP, NodeType.ENTITY):
-                dim = 2560
-                text_embs.append(np.zeros(dim, dtype=np.float32))
+                text_embs.append(np.zeros(emb_dim, dtype=np.float32))
             elif node.text_embedding is not None:
                 text_embs.append(node.text_embedding)
             else:
-                dim = 2560
-                text_embs.append(np.zeros(dim, dtype=np.float32))
+                text_embs.append(np.zeros(emb_dim, dtype=np.float32))
 
         self._text_emb_matrix = torch.tensor(
             np.stack(text_embs), dtype=torch.float32, device=device

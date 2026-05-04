@@ -2,14 +2,17 @@
 Visual Memory module for WorldMM.
 """
 
+import json
+import logging
 import os
 import pickle
-import logging
+import re
+from dataclasses import dataclass
+from typing import Dict, List, Any, Optional, Tuple, Union
+
 import numpy as np
 import torch
 import torch.nn.functional as F
-from typing import Dict, List, Any, Optional, Tuple, Union
-from dataclasses import dataclass
 from PIL import Image
 
 from ...embedding import EmbeddingModel
@@ -76,7 +79,6 @@ def _transform_timestamp(ts_str: str) -> str:
 
 def _load_json(file_path: str) -> Any:
     """Load JSON file."""
-    import json
     with open(file_path, 'r') as f:
         return json.load(f)
 
@@ -94,8 +96,6 @@ def _parse_time_range(time_range: str) -> Tuple[int, int]:
     Returns:
         Tuple of (start_timestamp, end_timestamp) as integers
     """
-    import re
-    
     # Pattern to match "DAY X HH:MM:SS"
     pattern = r'DAY\s*(\d+)\s+(\d{1,2}):(\d{2}):(\d{2})'
     matches = re.findall(pattern, time_range, re.IGNORECASE)
@@ -124,7 +124,6 @@ def _is_time_range_query(query: str) -> bool:
     Returns:
         True if query matches time range format
     """
-    import re
     pattern = r'DAY\s*\d+\s+\d{1,2}:\d{2}:\d{2}\s*-\s*DAY\s*\d+\s+\d{1,2}:\d{2}:\d{2}'
     return bool(re.search(pattern, query, re.IGNORECASE))
 

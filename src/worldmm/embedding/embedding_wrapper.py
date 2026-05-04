@@ -6,18 +6,24 @@ from PIL import Image
 class EmbeddingModel:
     """Universal embedding wrapper that routes different modalities to appropriate models"""
     
-    def __init__(self, 
+    def __init__(self,
                 text_model_name: str = "Qwen/Qwen3-Embedding-4B",
                 vis_model_name: str = "VLM2Vec/VLM2Vec-V2.0",
-                device: str = "cuda"):
+                device: Optional[str] = None):
         """
-        Initialize embedding models for different modalities
-        
+        Initialize embedding models for different modalities.
+
         Args:
             text_model_name: Model name for text embeddings (defaults to Qwen3-Embedding-4B)
             vis_model_name: Model name for visual embeddings (defaults to VLM2Vec V2.0)
-            device: Device to run models on
+            device: Device to run models on. Defaults to "cuda" when available, else "cpu".
         """
+        if device is None:
+            try:
+                import torch
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+            except ImportError:
+                device = "cpu"
         self.device = device
         
         # Initialize models lazily

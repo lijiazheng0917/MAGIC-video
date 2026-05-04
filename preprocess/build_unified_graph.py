@@ -152,7 +152,7 @@ def _resolve_mmlifelong_paths(args, video_id):
 
 def main():
     parser = argparse.ArgumentParser(description="Build unified multimodal graph")
-    parser.add_argument("--person", default="A1_JAKE", help="Subject ID (EgoLife)")
+    parser.add_argument("--subject", default="A1_JAKE", help="Subject ID (EgoLife)")
     parser.add_argument("--dataset", default="egolife", choices=["egolife", "videomme", "lvbench", "mmlifelong"],
                         help="Dataset: 'egolife' (default), 'videomme', or 'lvbench'")
     parser.add_argument("--video-id", default=None,
@@ -190,7 +190,7 @@ def main():
         paths = _resolve_mmlifelong_paths(args, args.video_id)
         label = f"MM-Lifelong/{args.video_id}"
     else:
-        person = args.person
+        person = args.subject
         paths = _resolve_egolife_paths(args, person)
         label = f"EgoLife/{person}"
 

@@ -3,12 +3,14 @@ WorldMemory: Unified memory system integrating episodic, semantic, and visual me
 with iterative reasoning for long-term video reasoning.
 """
 
-import copy as _copy
 import copy
+import gc
 import json
 import logging
 import re
+from string import Template
 from typing import Any, Dict, List, Optional, Set, Tuple
+
 from PIL import Image
 
 
@@ -53,7 +55,6 @@ def parse_time_reference(query: str) -> Optional[Tuple[float, float]]:
     """
     try:
         llm = _get_time_extract_llm()
-        from string import Template
         prompt = Template(_TIME_EXTRACT_TEMPLATE).substitute(query=query)
         response = llm.generate(prompt)
         if not response or response.strip().lower() == "null":
@@ -71,7 +72,13 @@ from ..embedding import EmbeddingModel
 from .episodic import EpisodicMemory, CaptionEntry
 from .semantic import SemanticMemory, SemanticTripleEntry
 from .visual import VisualMemory
-from .utils import *
+from .utils import (
+    MemorySearchOutput,
+    ReasoningOutput,
+    RetrievedItem,
+    QAResult,
+    transform_timestamp,
+)
 from .unified import UnifiedMemory
 from .unified.nodes import NodeType
 
@@ -170,7 +177,6 @@ class WorldMemory:
         self.bm25_weight: float = 0.3              # set via eval.py
         self.damping: float = 0.85                 # PPR damping factor
         self.reasoning_version: str = "egolife"    # template suffix: egolife / mmlifelong
-        self.structured_output: bool = False       # structured format_results (episode→visual→semantic)
         self.qa_template_name: str = "qa_egolife"  # QA template: "qa_egolife" (MCQ) or "qa_mmlifelong" (open-ended)
         self.seed_top_k: int = 5                   # number of seed nodes per channel for PPR
         self.retrieval_top_k: int = 0              # 0 = auto (episodic+semantic+visual), >0 = override
@@ -439,15 +445,13 @@ Retrieved:
         Episode text, chain facts, and visual frames are sorted by time together,
         so the LLM sees a chronological narrative with images inline.
         """
-        import re as _re
-
         def _extract_time_key(text):
             # EgoLife: [DAY1 11:09:43 - ...]
-            m = _re.match(r'\[DAY(\d+)\s+(\d{1,2}):(\d{2})', text)
+            m = re.match(r'\[DAY(\d+)\s+(\d{1,2}):(\d{2})', text)
             if m:
                 return int(m.group(1)) * 100000 + int(m.group(2)) * 3600 + int(m.group(3)) * 60
             # MM-Lifelong / Video-MME: [00:05:30 - ...]
-            m = _re.match(r'\[(\d{1,2}):(\d{2}):(\d{2})', text)
+            m = re.match(r'\[(\d{1,2}):(\d{2}):(\d{2})', text)
             if m:
                 return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
             return 0
@@ -955,8 +959,6 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
         Each chain_fact has {"time": "DAYx HH:MM", "fact": "...", "label": "..."}.
         Merge them all, sort by time.
         """
-        import re
-
         def _extract_time_key(text):
             """Extract time key from text containing [DAYx HH:MM...] or [HH:MM:SS...]."""
             # EgoLife: [DAY1 11:09:43 - ...] or [Retrieved episode] [DAY1 11:09:43 - ...]
@@ -1003,11 +1005,9 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
         Returns (decision: str, search_query: str).
         decision is 'search' or 'answer'.
         """
-        import json as _json
-        import re as _re
         try:
-            json_match = _re.search(r'\{.*\}', response, _re.DOTALL)
-            data = _json.loads(json_match.group() if json_match else response)
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            data = json.loads(json_match.group() if json_match else response)
             decision     = data.get("decision", "answer").lower()
             search_query = data.get("search_query", "")
             return decision, search_query
@@ -1026,8 +1026,6 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
         The agent only decides 'search' or 'answer' without selecting a memory type.
         A single cross-modal PPR call covers all modalities.
         """
-        import copy as _copy
-
         if self.unified_memory is None:
             raise RuntimeError("unified_memory is not initialised.")
 
@@ -1088,7 +1086,7 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                      "or 'answer' (sufficient evidence accumulated)."},
                 ]
 
-            reasoning_messages = _copy.deepcopy(reasoning_prompt)
+            reasoning_messages = copy.deepcopy(reasoning_prompt)
             reasoning_messages.append({"role": "user", "content": user_content})
 
             if self.debug:
@@ -1187,7 +1185,6 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                     max_frames_per_clip=self.frames_per_clip,
                     max_total_frames=MAX_TOTAL_FRAMES,
                     _current_total_frames=total_visual_frames,
-                    structured_output=self.structured_output,
                 )
                 # Stamp round number and query
                 for item in new_items:
@@ -1204,17 +1201,16 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
 
                 # Build round history summary (images shown as placeholder)
                 # Sort by time: episodes/visual first (by time), semantic last
-                import re as _re_sort
                 def _time_sort_key(item):
                     if item.memory_type == "semantic":
                         return (1, 0)  # semantic at the end
                     if isinstance(item.content, str):
                         # EgoLife: [DAY1 11:09:43 - ...]
-                        m = _re_sort.match(r'\[DAY(\d+)\s+(\d{1,2}):(\d{2})', item.content)
+                        m = re.match(r'\[DAY(\d+)\s+(\d{1,2}):(\d{2})', item.content)
                         if m:
                             return (0, int(m.group(1)) * 100000 + int(m.group(2)) * 3600 + int(m.group(3)) * 60)
                         # MM-Lifelong / Video-MME: [00:05:30 - ...]
-                        m = _re_sort.match(r'\[(\d{1,2}):(\d{2}):(\d{2})', item.content)
+                        m = re.match(r'\[(\d{1,2}):(\d{2}):(\d{2})', item.content)
                         if m:
                             return (0, int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)))
                     return (0, 0)
@@ -1332,26 +1328,10 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                     if chain_facts:
                         # Mix facts into text_parts by time
                         if len(_bids) > 1:
-                            # Cross-broadcast: mix facts into each video's section
-                            new_text_parts = []
-                            for line in text_parts:
-                                new_text_parts.append(line)
-                                if line.startswith("[Video "):
-                                    # Extract bid from "[Video 14]"
-                                    import re as _re_bid
-                                    m = _re_bid.match(r'\[Video (\d+)\]', line)
-                                    if m:
-                                        current_bid = m.group(1)
-                                        bid_facts = [cf for cf in chain_facts
-                                                     if cf.get("broadcast_id") == current_bid]
-                                        if bid_facts:
-                                            # Collect lines until next [Video] or end
-                                            # We'll insert facts after collecting this video's lines
-                                            pass  # handled below
-                            # Simpler approach: rebuild per-video sections with facts mixed in
-                            new_text_parts = []
-                            current_bid = None
-                            current_section = []
+                            # Cross-broadcast: rebuild per-video sections with facts mixed in
+                            new_text_parts: List[str] = []
+                            current_bid: Optional[str] = None
+                            current_section: List[str] = []
                             for line in text_parts:
                                 if line.startswith("[Video "):
                                     # Flush previous section with its facts
@@ -1363,8 +1343,7 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                                                 current_section, bid_facts)
                                         new_text_parts.extend(current_section)
                                     new_text_parts.append(line)
-                                    import re as _re_bid2
-                                    m = _re_bid2.match(r'\[Video (\d+)\]', line)
+                                    m = re.match(r'\[Video (\d+)\]', line)
                                     current_bid = m.group(1) if m else None
                                     current_section = []
                                 else:
@@ -1439,7 +1418,7 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                 "text": "\nPlease provide only the final answer from the choices given (e.g., A, B, C, or D)."
             })
 
-        qa_messages = _copy.deepcopy(qa_prompt)
+        qa_messages = copy.deepcopy(qa_prompt)
         qa_messages.append({"role": "user", "content": qa_content})
 
         if self.debug:
@@ -1468,7 +1447,7 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                     "type": "text",
                     "text": "\nPlease provide only the final answer from the choices given (e.g., A, B, C, or D)."
                 })
-            qa_messages_short = _copy.deepcopy(qa_prompt)
+            qa_messages_short = copy.deepcopy(qa_prompt)
             qa_messages_short.append({"role": "user", "content": qa_content_short})
             try:
                 answer = self.respond_llm_model.generate(qa_messages_short)
@@ -1528,7 +1507,6 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
         if hasattr(self, 'episodic_memory') and hasattr(self.episodic_memory, 'hipporag'):
             self.episodic_memory.hipporag.clear()
         # Force garbage collection to free memory before next video
-        import gc
         gc.collect()
         try:
             import torch
