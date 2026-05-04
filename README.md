@@ -1,6 +1,6 @@
-# nips2026code
+# MAGIC-video
 
-> Code for our NeurIPS 2026 submission. We introduce a **Unified Multimodal Graph** that indexes episodic, semantic, and visual content as a single graph and retrieves across modalities via cross-modal personalized PageRank, together with **Temporal Augmentation** (topic chains and storyline chains) that injects long-range entity and activity facts into the retrieved context.
+> We introduce a **Unified Multimodal Graph** that indexes episodic, semantic, and visual content as a single graph and retrieves across modalities via cross-modal personalized PageRank, together with **Temporal Augmentation** (topic chains and storyline chains) that injects long-range entity and activity facts into the retrieved context.
 
 Supported benchmarks: **EgoLifeQA** (MCQ), **Ego-R1** (MCQ), **MM-Lifelong** (open-ended).
 
@@ -14,8 +14,8 @@ Supported benchmarks: **EgoLifeQA** (MCQ), **Ego-R1** (MCQ), **MM-Lifelong** (op
 ## 1. Installation
 
 ```bash
-git clone https://github.com/lijiazheng0917/nips2026code.git
-cd nips2026code
+git clone https://github.com/lijiazheng0917/MAGIC-video.git
+cd MAGIC-video
 
 # Environment
 uv sync
