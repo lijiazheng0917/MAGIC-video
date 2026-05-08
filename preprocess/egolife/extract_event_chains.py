@@ -1,8 +1,8 @@
-"""Extract cross-day storylines from 10min captions.
+"""Extract cross-day event chains from 10min captions.
 
-Step 1: Per-day extraction — identify major activities/storylines per day
-Step 2: Cross-day merge — identify storylines that span multiple days
-Step 3: Detail extraction — for each storyline step, extract facts from 30sec captions
+Step 1: Per-day extraction — identify major activities per day
+Step 2: Cross-day merge — identify event chains that span multiple days
+Step 3: Detail extraction — for each event-chain step, extract facts from 30sec captions
 """
 import json, os, re, sys, argparse, logging, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -113,7 +113,7 @@ def main():
     parser.add_argument("--subject", default="A1_JAKE")
     parser.add_argument("--model", default="openai/gpt-oss-120b")
     parser.add_argument("--data-dir", default="data/EgoLife")
-    parser.add_argument("--output-dir", default="output/metadata/storylines")
+    parser.add_argument("--output-dir", default="output/metadata/event_chains")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
 

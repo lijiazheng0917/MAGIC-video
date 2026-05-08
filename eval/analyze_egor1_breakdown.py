@@ -3,7 +3,7 @@
 Pools UG and Chain result JSONs across seeds (one result dir per seed),
 joins by (ID, split), classifies each question-run by Topic/Event markers
 in the Chain run's retrieved_content, and prints a Table-4-style breakdown:
-All / None / Topic only / Storyline only / Both / Any.
+All / None / Topic only / Event only / Both / Any.
 
 Example:
   python eval/analyze_egor1_breakdown.py \
@@ -113,7 +113,7 @@ def analyze(ug_dirs: list[str], chain_dirs: list[str]) -> dict:
                 ht, he = _classify_chain(ch_e)
                 if ht and he: b = "Both"
                 elif ht:      b = "Topic only"
-                elif he:      b = "Storyline only"
+                elif he:      b = "Event only"
                 else:         b = "None"
 
                 ug_eval = int(ug_e.get("evaluate", 0))
@@ -159,7 +159,7 @@ def analyze(ug_dirs: list[str], chain_dirs: list[str]) -> dict:
                 ht, he = _classify_chain(ch_e)
                 if ht and he: b = "Both"
                 elif ht:      b = "Topic only"
-                elif he:      b = "Storyline only"
+                elif he:      b = "Event only"
                 else:         b = "None"
 
                 # Mean UG credit across UG seeds
@@ -186,7 +186,7 @@ def analyze(ug_dirs: list[str], chain_dirs: list[str]) -> dict:
 
 
 def _print_table(buckets: dict, title: str = "") -> None:
-    order = ["All", "None", "Topic only", "Storyline only", "Both", "Any"]
+    order = ["All", "None", "Topic only", "Event only", "Both", "Any"]
     if title:
         print(f"\n{title}")
     print(f"{'Subset':18s} {'n':>5s} {'UG':>8s} {'Chain':>8s} {'Δ':>8s}")

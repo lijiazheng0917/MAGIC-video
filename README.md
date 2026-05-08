@@ -1,17 +1,17 @@
 # MAGIC-Video
 
-> **MAGIC-Video** is a training-free framework for ultra-long video reasoning (days to weeks of footage) built around a **M**ultimod**A**l memory **G**raph with **I**nterleaved narrative **C**hain. The **Multimodal Memory Graph (MMG)** unifies episodic captions, named entities, semantic triples, and visual clips into a single heterogeneous graph connected by six typed cross-modal and temporal edges, supporting cross-modal retrieval via a single Personalized PageRank pass. The **Narrative Memory Chain (NMC)** complements bottom-up graph aggregation with a top-down distillation that scans the whole video offline to surface per-entity biographies and multi-day activity events as coherent cross-time threads. At inference time, an agentic loop alternates between search and answer, interleaving graph retrieval with narrative fact injection — covering both the modality and time dimensions of ultra-long video in a single retrieval pipeline.
+## 1. Introduction
 
-On three ultra-long video benchmarks, MAGIC-Video outperforms the strongest prior agentic systems by **+10.1** points on **EgoLifeQA**, **+7.4** points on **Ego-R1**, and **+5.9** points on **MM-Lifelong**.
+**MAGIC-Video** is a training-free framework for ultra-long video reasoning (days to weeks of footage) built around a **M**ultimod**A**l memory **G**raph with **I**nterleaved narrative **C**hain. The **Multimodal Memory Graph (MMG)** unifies episodic captions, named entities, semantic triples, and visual clips into a single heterogeneous graph connected by six typed cross-modal and temporal edges, supporting cross-modal retrieval via a single Personalized PageRank pass. The **Narrative Memory Chain (NMC)** complements bottom-up graph aggregation with a top-down distillation that scans the whole video offline to surface per-entity *topic chains* (entity biographies) and multi-day *event chains* (recurring/multi-step activities) as coherent cross-time threads. At inference time, an agentic loop alternates between `search` and `answer` (capped at 5 search rounds), interleaving graph retrieval with narrative fact injection — covering both the modality and time dimensions of ultra-long video in a single retrieval pipeline. On three ultra-long video benchmarks, MAGIC-Video outperforms the strongest prior agentic systems by **+10.1** points on **EgoLifeQA**, **+7.4** points on **Ego-R1**, and **+5.9** points on **MM-Lifelong**.
 
 <p align="center">
   <img src="figures/fig2.png" width="900" alt="Method overview">
 </p>
-<p align="center"><em>Method overview. Offline (left): video → multi-granularity captions → Multimodal Memory Graph (MMG) and Narrative Memory Chains (NMC). Online (right): an agentic loop alternates cross-modal PPR over MMG with narrative fact injection from NMC into the model context.</em></p>
+<p align="center"><em>MAGIC-Video pipeline. <strong>Offline (left):</strong> preprocessing produces multi-granularity captions, named entities, semantic triples, and visual embeddings, from which we build the <strong>Multimodal Memory Graph</strong> (four node types connected by six typed edges) and the <strong>Narrative Memory Chain</strong> (topic chains + event chains). <strong>Online (right):</strong> for each question, an agentic loop seeds cross-modal Personalized PageRank over the graph, injects matching chains, and feeds the merged context to the reasoning backbone, which either refines its search or commits to an answer.</em></p>
 
 ---
 
-## 1. Installation
+## 2. Installation
 
 ```bash
 git clone https://github.com/lijiazheng0917/MAGIC-video.git
@@ -49,8 +49,8 @@ The text embedding model runs locally — weights are fetched from Hugging Face 
 Reproducing the open-source VLM rows in the paper (Qwen3.5-9B, VideoLLaMA3, InternVideo2.5, LongVA, VideoChat-Flash) uses `vllm` and is **not covered by `uv sync`** — `vllm` has a different CUDA / PyTorch stack that conflicts with our main environment. Create a separate conda env for it:
 
 ```bash
-conda create -n worldmm_vllm python=3.11 -y
-conda activate worldmm_vllm
+conda create -n magic-video-baselines python=3.11 -y
+conda activate magic-video-baselines
 pip install vllm transformers accelerate
 # plus the baseline-specific requirements, see baselines/eval/*.py
 ```
@@ -72,23 +72,23 @@ All `[GPU]` steps in the paper were run on a single NVIDIA A100 (40 GB).
 
 ### Skipping preprocessing
 
-All `[API]` steps produce JSON artifacts (captions, OpenIE results, semantic triples, topic/storyline chains). They cost OpenRouter credits and take several hours per subject / video, and because LLM outputs are non-deterministic, re-running them will give slightly different results from ours. To make reproduction both cheap and faithful, we will release the exact artifacts used in the paper on Hugging Face (link TBD). Once downloaded, you only need to run the `[GPU]` steps (visual embeddings + unified graph) and then go straight to evaluation.
+All `[API]` steps produce JSON artifacts (captions, OpenIE results, semantic triples, topic and event chains). They cost OpenRouter credits and take several hours per subject / video, and because LLM outputs are non-deterministic, re-running them will give slightly different results from ours. To make reproduction both cheap and faithful, we will release the exact artifacts used in the paper on Hugging Face (link TBD). Once downloaded, you only need to run the `[GPU]` steps (visual embeddings + unified graph) and then go straight to evaluation.
 
 In contrast, `[GPU]` steps are deterministic given the same inputs and model weights, so we do **not** ship them — you rebuild them locally with the commands below.
 
 ---
 
-## 2. EgoLifeQA (500q MCQ)
+## 3. EgoLifeQA (500q MCQ)
 
-Subject used in the paper: `A1_JAKE` (7 days, ~50h of egocentric video).
+Subject used in the paper: `A1_JAKE` — 7 days, **51.9 hours** of continuous first-person video. The 500 questions are split across five subtasks: EntityLog (EL), EventRecall (ER), HabitInsight (HI), RelationMap (RM), TaskMaster (TM).
 
-### 2.1 Download `[Local]`
+### 3.1 Download `[Local]`
 
 ```bash
 hf download lmms-lab/EgoLife --repo-type=dataset --local-dir data/EgoLife
 ```
 
-### 2.2 Preprocess captions
+### 3.2 Preprocess captions
 
 ```bash
 # [API] Translate dense captions (CN → EN)
@@ -97,7 +97,7 @@ python data/EgoLife/utils/translate_densecap.py
 python data/EgoLife/utils/generate_sync.py
 ```
 
-### 2.3 Extract memory features
+### 3.3 Extract memory features
 ```bash
 # [API] Episodic memory: 30sec captions → multiscale → triples
 python preprocess/egolife/episodic/generate_fine_caption.py \
@@ -120,7 +120,7 @@ CUDA_VISIBLE_DEVICES=0 python preprocess/egolife/visual/extract_visual_features.
 # Multi-GPU alternative: bash preprocess/egolife/visual/extract_visual_features.sh --subject A1_JAKE --gpu 0,1,2,3 --num_frames 16
 ```
 
-### 2.4 Build unified multimodal graph `[GPU]`
+### 3.4 Build unified multimodal graph `[GPU]`
 
 ```bash
 python preprocess/build_unified_graph.py \
@@ -129,7 +129,9 @@ python preprocess/build_unified_graph.py \
     --embedding-device cuda
 ```
 
-### 2.5 Build temporal augmentation `[API]`
+### 3.5 Build Narrative Memory Chain `[API]`
+
+The NMC has two extractors: per-entity **topic chains** and cross-time **event chains**.
 
 ```bash
 python preprocess/egolife/extract_topic_chains.py \
@@ -137,13 +139,13 @@ python preprocess/egolife/extract_topic_chains.py \
     --model openai/gpt-oss-120b \
     --output-dir output/metadata/topic_chains
 
-python preprocess/egolife/extract_storylines.py \
+python preprocess/egolife/extract_event_chains.py \
     --subject A1_JAKE \
     --model openai/gpt-oss-120b \
-    --output-dir output/metadata/storylines
+    --output-dir output/metadata/event_chains
 ```
 
-### 2.6 Evaluate `[GPU + API]`
+### 3.6 Evaluate `[GPU + API]`
 
 ```bash
 python eval/eval_egolife.py \
@@ -152,19 +154,19 @@ python eval/eval_egolife.py \
     --respond-model qwen/qwen3.5-flash-02-23 \
     --chain-mode facts \
     --topic-chain-facts-path output/metadata/topic_chains/A1_JAKE/topic_chains.json \
-    --storyline-path output/metadata/storylines/A1_JAKE/step3_enriched_chains.json \
+    --event-chain-path output/metadata/event_chains/A1_JAKE/step3_enriched_chains.json \
     --parallel 8
 ```
 
-Chain hyperparameters use paper defaults (W4: `--chain-max-events 1 --chain-topic-sim 0.7 --chain-storyline-sim 0.7`). For the baseline (independent three-way retrieval), pass `--retrieval-backend independent --chain-mode ""`.
+Chain hyperparameters use paper defaults (see `eval/eval_egolife.py` for the exact values). For the baseline (independent three-way retrieval), pass `--retrieval-backend independent --chain-mode ""`.
 
 ---
 
-## 3. Ego-R1 (50q MCQ)
+## 4. Ego-R1 (50q MCQ)
 
 Ego-R1 reuses the EgoLife memory and graph — only the benchmark file differs.
 
-### 3.1 Get the benchmark
+### 4.1 Get the benchmark
 
 Place the two split files at:
 - `data/Ego-R1-Bench/manual-benchmark/A1_JAKE.json`
@@ -172,7 +174,7 @@ Place the two split files at:
 
 See the Ego-R1 paper for download instructions.
 
-### 3.2 Evaluate `[GPU + API]`
+### 4.2 Evaluate `[GPU + API]`
 
 ```bash
 python eval/eval_egor1.py \
@@ -181,16 +183,18 @@ python eval/eval_egor1.py \
     --respond-model qwen/qwen3.5-flash-02-23 \
     --chain-mode facts \
     --topic-chain-facts-path output/metadata/topic_chains/A1_JAKE/topic_chains.json \
-    --storyline-path output/metadata/storylines/A1_JAKE/step3_enriched_chains.json
+    --event-chain-path output/metadata/event_chains/A1_JAKE/step3_enriched_chains.json
 ```
 
-Chain hyperparameters use paper defaults (X3: `--chain-max-events 1 --chain-topic-sim 0.7 --chain-storyline-sim 0.7`). Baseline: pass `--retrieval-backend independent --chain-mode ""`.
+Chain hyperparameters use paper defaults (see `eval/eval_egor1.py` for the exact values). Baseline: pass `--retrieval-backend independent --chain-mode ""`.
 
 ---
 
-## 4. MM-Lifelong (623q open-ended)
+## 5. MM-Lifelong — Month subset (623q open-ended)
 
-### 4.1 Download (14 videos — full coverage of the 623 val questions) `[Local]`
+The paper uses the **Month** split — the longest temporal scale of MM-Lifelong (Day / Week / Month). It consists of **105.6 hours** of livestream video over **51 days**, and **623 open-ended questions** across 11 categories (Counting, Entity Recognition, Causal Reasoning, Temporal Reasoning, Event Recognition, Language Content Recall, Hallucination Detection, Attribute Recognition, Social Interaction, State Change, Event Tracking). Coverage of the 623 questions requires the **14 broadcast videos** below.
+
+### 5.1 Download (14 videos — full coverage of the 623 val questions) `[Local]`
 
 ```bash
 hf download CG-Bench/MM-Lifelong \
@@ -210,7 +214,7 @@ For a quick-start subset you can download fewer videos (each covers a disjoint s
 | top7 | `14,19,18,21,17,23,22` | 442 / 623 (70.9%) |
 | **all (paper)** | `4,11,12,13,14,15,16,17,18,19,20,21,22,23` | 623 / 623 (100%) |
 
-### 4.2 Per-video preprocessing
+### 5.2 Per-video preprocessing
 
 For each broadcast `$vid`, run the full pipeline (ASR → VLM caption → merge → multi-scale → OpenIE → semantic → visual embeddings) in one command `[GPU + API]`:
 
@@ -249,7 +253,7 @@ python preprocess/mmlifelong/preprocess_video.py --video-id $vid \
 ```
 </details>
 
-### 4.3 Build unified graph (per video) `[GPU]`
+### 5.3 Build unified graph (per video) `[GPU]`
 
 ```bash
 python preprocess/build_unified_graph.py \
@@ -259,14 +263,14 @@ python preprocess/build_unified_graph.py \
     --embedding-device cuda
 ```
 
-### 4.4 Build temporal augmentation (per video) `[API]`
+### 5.4 Build Narrative Memory Chain (per video) `[API]`
 
 ```bash
 python preprocess/mmlifelong/extract_topic_chains.py --video-id $vid --model openai/gpt-oss-120b
-python preprocess/mmlifelong/extract_storylines.py  --video-id $vid --model openai/gpt-oss-120b
+python preprocess/mmlifelong/extract_event_chains.py --video-id $vid --model openai/gpt-oss-120b
 ```
 
-### 4.5 Evaluate `[GPU + API]`
+### 5.5 Evaluate `[GPU + API]`
 
 ```bash
 python eval/eval_mmlifelong.py \
@@ -276,9 +280,9 @@ python eval/eval_mmlifelong.py \
     --parallel 8
 ```
 
-The chain hyperparameters default to the paper's tuned config F5 (`min-hits 4 / topic-sim 0.7 / storyline-sim 0.7 / max-topics 2 / max-events 2 / storyline-min-hits 1 / storyline-granularities "30sec,3min"`). Baseline: pass `--retrieval-backend independent --chain-mode ""`.
+Chain hyperparameters use paper defaults (see `eval/eval_mmlifelong.py` for the exact values). Baseline: pass `--retrieval-backend independent --chain-mode ""`.
 
-### 4.6 Re-judge with a different LLM `[API]`
+### 5.6 Re-judge with a different LLM `[API]`
 
 ```bash
 python eval/rejudge.py \
@@ -290,7 +294,7 @@ python eval/rejudge.py \
 
 ---
 
-## 5. Main Results (paper defaults)
+## 6. Main Results
 
 <p align="center">
   <img src="figures/result1.png" width="900" alt="Main benchmark results">
@@ -306,7 +310,7 @@ See the paper for ablations, judge-comparison tables, and chain-injection breakd
 
 ---
 
-## 6. Acknowledgments
+## 7. Acknowledgments
 
 Built on [WorldMM](https://github.com/wgcyeo/WorldMM), [HippoRAG](https://github.com/OSU-NLP-Group/HippoRAG), and [VLM2Vec](https://github.com/TIGER-AI-Lab/VLM2Vec). Datasets: [EgoLife](https://huggingface.co/datasets/lmms-lab/EgoLife) (LMMs-Lab), [Ego-R1](https://huggingface.co/datasets/Ego-R1/Ego-R1-Data), [MM-Lifelong](https://huggingface.co/datasets/CG-Bench/MM-Lifelong) (CG-Bench).
 

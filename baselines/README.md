@@ -17,8 +17,8 @@ Most open-source VLMs require a **separate conda environment** from the main pro
 Used by `baselines/eval/eval_vlm_egolife.py` and `baselines/eval/eval_vlm_mmlifelong.py` when driven by a local vLLM server.
 
 ```bash
-conda create -n worldmm_vllm python=3.11 -y
-conda activate worldmm_vllm
+conda create -n magic-video-baselines python=3.11 -y
+conda activate magic-video-baselines
 pip install vllm transformers accelerate
 ```
 
@@ -28,8 +28,8 @@ Launch the vLLM server separately (port 8000) and point `--api-base http://local
 These models need an older torch/transformers combo.
 
 ```bash
-conda create -n worldmm_videollama python=3.10 -y
-conda activate worldmm_videollama
+conda create -n magic-video-videollama python=3.10 -y
+conda activate magic-video-videollama
 pip install torch==2.4.0+cu121 torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install "transformers==4.46.3" accelerate flash-attn==2.7.3 decord pysrt opencv-python
 ```
@@ -69,7 +69,7 @@ python baselines/eval/preextract_mml_frames.py \
 
 Start the vLLM server in one shell:
 ```bash
-conda activate worldmm_vllm
+conda activate magic-video-baselines
 vllm serve Qwen/Qwen2.5-VL-9B-Instruct --port 8000 --max-model-len 100000 --gpu-memory-utilization 0.95
 ```
 
@@ -97,7 +97,7 @@ python baselines/eval/eval_vlm_egolife.py \
 
 Run from the Video-LLM env (no vLLM server):
 ```bash
-conda activate worldmm_videollama
+conda activate magic-video-videollama
 
 # VideoLLaMA3 on MM-Lifelong
 python baselines/eval/eval_videollama3.py \

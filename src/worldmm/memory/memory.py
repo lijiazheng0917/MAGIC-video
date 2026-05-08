@@ -127,7 +127,7 @@ class WorldMemory:
         event_facts_path: Optional[str] = None,
         chain_mode: Optional[str] = None,
         topic_chain_facts_path: Optional[str] = None,
-        storyline_path: Optional[str] = None,
+        event_chain_path: Optional[str] = None,
     ):
         """
         Initialize WorldMemory with all memory subsystems.
@@ -192,7 +192,7 @@ class WorldMemory:
             self.unified_memory.load(
                 event_facts_path=event_facts_path,
                 topic_chain_facts_path=topic_chain_facts_path,
-                storyline_path=storyline_path,
+                event_chain_path=event_chain_path,
             )
 
     def load_episodic_captions(
@@ -1312,9 +1312,9 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                         max_topic_chains=getattr(self, 'chain_max_topics', 3),
                         max_event_chains=getattr(self, 'chain_max_events', 2),
                         topic_sim_threshold=getattr(self, 'chain_topic_sim', 0.5),
-                        storyline_sim_threshold=getattr(self, 'chain_storyline_sim', 0.5),
-                        storyline_min_hits=getattr(self, 'chain_storyline_min_hits', 1),
-                        storyline_granularities=getattr(self, 'chain_storyline_granularities', ("30sec", "3min")),
+                        event_chain_sim_threshold=getattr(self, 'chain_event_sim', 0.5),
+                        event_chain_min_hits=getattr(self, 'chain_event_min_hits', 1),
+                        event_chain_granularities=getattr(self, 'chain_event_granularities', ("30sec", "3min")),
                     )
                     # Cross-round dedup
                     if chain_facts:

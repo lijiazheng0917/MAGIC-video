@@ -80,26 +80,26 @@ def main():
         help="Path to topic_chains.json (entity lifecycle facts)."
     )
     parser.add_argument(
-        "--storyline-path", type=str,
-        default="output/metadata/storylines/A1_JAKE/step3_enriched_chains.json",
-        help="Path to step3_enriched_chains.json (cross-time storyline chains)."
+        "--event-chain-path", type=str,
+        default="output/metadata/event_chains/A1_JAKE/step3_enriched_chains.json",
+        help="Path to step3_enriched_chains.json (cross-time event chains)."
     )
     parser.add_argument("--chain-min-hits", type=int, default=1,
                         help="Topic chain coarse filter: min episode hits (default 1)")
     parser.add_argument("--chain-max-topics", type=int, default=3,
                         help="Max topic chains to inject per round (default 3)")
     parser.add_argument("--chain-max-events", type=int, default=1,
-                        help="Max storyline chains to inject per round (default 1 — W4 config)")
+                        help="Max event chains to inject per round (default 1)")
     parser.add_argument("--chain-topic-sim", type=float, default=0.7,
                         help="Topic chain embedding similarity threshold (default 0.7)")
-    parser.add_argument("--chain-storyline-sim", type=float, default=0.7,
-                        help="Storyline embedding similarity threshold (default 0.7)")
-    parser.add_argument("--chain-storyline-min-hits", type=int, default=1,
-                        help="Minimum storyline step hits required for candidacy (default 1)")
-    parser.add_argument("--chain-storyline-granularities", type=str,
+    parser.add_argument("--chain-event-sim", type=float, default=0.7,
+                        help="Event-chain embedding similarity threshold (default 0.7)")
+    parser.add_argument("--chain-event-min-hits", type=int, default=1,
+                        help="Minimum event-chain step hits required for candidacy (default 1)")
+    parser.add_argument("--chain-event-granularities", type=str,
                         default="30sec,3min",
                         help="Comma-separated episode granularities used to "
-                             "detect storyline step hits (default '30sec,3min'). "
+                             "detect event-chain step hits (default '30sec,3min'). "
                              "Add '10min' / '1h' to loosen coarse filter.")
     args = parser.parse_args()
 
@@ -146,7 +146,7 @@ def main():
         cache_dir=args.cache_dir,
         chain_mode=args.chain_mode,
         topic_chain_facts_path=args.topic_chain_facts_path,
-        storyline_path=args.storyline_path,
+        event_chain_path=args.event_chain_path,
     )
 
     # Set parameters (unified_graph backend)
@@ -157,10 +157,10 @@ def main():
         world_memory.chain_max_topics = args.chain_max_topics
         world_memory.chain_max_events = args.chain_max_events
         world_memory.chain_topic_sim = args.chain_topic_sim
-        world_memory.chain_storyline_sim = args.chain_storyline_sim
-        world_memory.chain_storyline_min_hits = args.chain_storyline_min_hits
-        world_memory.chain_storyline_granularities = tuple(
-            g.strip() for g in args.chain_storyline_granularities.split(",") if g.strip()
+        world_memory.chain_event_sim = args.chain_event_sim
+        world_memory.chain_event_min_hits = args.chain_event_min_hits
+        world_memory.chain_event_granularities = tuple(
+            g.strip() for g in args.chain_event_granularities.split(",") if g.strip()
         )
         logger.info(
             f"BM25 weight: {args.bm25_weight}, damping: {args.damping}"
@@ -360,7 +360,7 @@ def main():
             cache_dir=args.cache_dir,
             chain_mode=args.chain_mode,
             topic_chain_facts_path=args.topic_chain_facts_path,
-            storyline_path=args.storyline_path,
+            event_chain_path=args.event_chain_path,
         )
         if args.retrieval_backend == "unified_graph":
             wm.bm25_weight = args.bm25_weight
@@ -369,10 +369,10 @@ def main():
             wm.chain_max_topics = args.chain_max_topics
             wm.chain_max_events = args.chain_max_events
             wm.chain_topic_sim = args.chain_topic_sim
-            wm.chain_storyline_sim = args.chain_storyline_sim
-            wm.chain_storyline_min_hits = args.chain_storyline_min_hits
-            wm.chain_storyline_granularities = tuple(
-                g.strip() for g in args.chain_storyline_granularities.split(",") if g.strip()
+            wm.chain_event_sim = args.chain_event_sim
+            wm.chain_event_min_hits = args.chain_event_min_hits
+            wm.chain_event_granularities = tuple(
+                g.strip() for g in args.chain_event_granularities.split(",") if g.strip()
             )
         wm.set_retrieval_top_k(
             episodic=args.episodic_top_k,

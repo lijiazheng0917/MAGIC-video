@@ -3,7 +3,7 @@
 For each chain run, classifies every (chain) record by which kind of NMC fact
 fired in the round_history (`[Topic:` / `[Event:` markers), then prints a
 Table-style breakdown of UG vs Chain accuracy across the buckets:
-All / None / Topic only / Storyline only / Both / Any.
+All / None / Topic only / Event only / Both / Any.
 
 Two modes:
   - Paired per-seed (len(ug_dirs) == len(chain_dirs)): keys are matched
@@ -154,7 +154,7 @@ def analyze(ug_paths: list[str], chain_paths: list[str], cfg: dict) -> dict:
                 ht, he = _classify_chain(ch_e)
                 if ht and he: b = "Both"
                 elif ht: b = "Topic only"
-                elif he: b = "Storyline only"
+                elif he: b = "Event only"
                 else: b = "None"
                 ug_v = _score_of(ug_e, score_field, score_kind)
                 ch_v = _score_of(ch_e, score_field, score_kind)
@@ -196,7 +196,7 @@ def analyze(ug_paths: list[str], chain_paths: list[str], cfg: dict) -> dict:
                 ht, he = _classify_chain(ch_e)
                 if ht and he: b = "Both"
                 elif ht: b = "Topic only"
-                elif he: b = "Storyline only"
+                elif he: b = "Event only"
                 else: b = "None"
                 ug_vals = [_score_of(um[k], score_field, score_kind) for um, _ in ug_maps]
                 ug_mean = sum(ug_vals) / len(ug_vals)
@@ -219,7 +219,7 @@ def analyze(ug_paths: list[str], chain_paths: list[str], cfg: dict) -> dict:
 
 
 def _print_table(buckets: dict, title: str = "") -> None:
-    order = ["All", "None", "Topic only", "Storyline only", "Both", "Any"]
+    order = ["All", "None", "Topic only", "Event only", "Both", "Any"]
     if title:
         print(f"\n{title}")
     print(f"{'Subset':18s} {'n':>5s} {'UG':>8s} {'Chain':>8s} {'Δ':>8s}")

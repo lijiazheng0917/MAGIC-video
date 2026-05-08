@@ -61,7 +61,7 @@ class UnifiedMemory:
         self._indexed_time    = 0  # int (EgoLife) or float (Video-MME)
 
         self._chain_mode             = chain_mode  # reserved for future chain injection
-        self._storylines             = []   # cross-time event chains
+        self._event_chains             = []   # cross-time event chains
 
     # ------------------------------------------------------------------
     # Load
@@ -70,14 +70,14 @@ class UnifiedMemory:
     def load(self,
              event_facts_path: Optional[str] = None,
              topic_chain_facts_path: Optional[str] = None,
-             storyline_path: Optional[str] = None,
+             event_chain_path: Optional[str] = None,
              **kwargs) -> None:
         """Load the serialised graph and chain facts from disk.
 
         Args:
             event_facts_path: Legacy event facts for episode metadata injection.
             topic_chain_facts_path: Topic chain who-did-what facts (topic_chains_filtered.json).
-            storyline_path: Cross-time event chains (step2_event_chains.json).
+            event_chain_path: Cross-time event chains (step3_enriched_chains.json).
             **kwargs: Accepts and ignores legacy params.
         """
         logger.info(f"Loading unified graph from {self.graph_path}…")
@@ -113,9 +113,9 @@ class UnifiedMemory:
             logger.info(f"Loaded topic chain facts: {len(self._topic_facts)} entities, "
                         f"{sum(len(f) for f in self._topic_facts.values())} total facts")
 
-        # Load event chains (cross-time storylines)
-        if storyline_path and os.path.exists(storyline_path):
-            raw = json.load(open(storyline_path))
+        # Load event chains
+        if event_chain_path and os.path.exists(event_chain_path):
+            raw = json.load(open(event_chain_path))
             def _parse_hms(t, as_seconds=False):
                 """Parse 'HH:MM:SS' or 'HH:MM'. If as_seconds, return total seconds
                 (MM-Lifelong / Video-MME float-second nodes); otherwise return
@@ -127,12 +127,12 @@ class UnifiedMemory:
                 if as_seconds:
                     return h * 3600 + mn * 60 + s
                 return h * 1000000 + mn * 10000 + s * 100
-            for sl in raw:
+            for ec in raw:
                 # Detect format: EgoLife steps carry "DAY*"; livestream steps don't.
                 # When no day prefix, node.start_ts is in float seconds, so step
                 # times must also be parsed as seconds to allow comparison.
                 steps_with_ts = []
-                for step in sl.get("steps", []):
+                for step in ec.get("steps", []):
                     day = step.get("day", "")
                     dm = re.match(r'DAY(\d+)', day)
                     day_prefix = int(dm.group(1)) * 100000000 if dm else 0
@@ -150,13 +150,13 @@ class UnifiedMemory:
                         "description": step.get("description", ""),
                     })
                 if len(steps_with_ts) >= 2:
-                    self._storylines.append({
-                        "name": sl.get("name", ""),
-                        "key_entities": sl.get("key_entities", []),
+                    self._event_chains.append({
+                        "name": ec.get("name", ""),
+                        "key_entities": ec.get("key_entities", []),
                         "steps": steps_with_ts,
                     })
-            logger.info(f"Loaded storylines: {len(self._storylines)} event chains, "
-                        f"{sum(len(s['steps']) for s in self._storylines)} total steps")
+            logger.info(f"Loaded event chains: {len(self._event_chains)} chains, "
+                        f"{sum(len(s['steps']) for s in self._event_chains)} total steps")
 
     # ------------------------------------------------------------------
     # Chain facts injection (chain_mode="facts")
@@ -172,9 +172,9 @@ class UnifiedMemory:
         max_event_chains: int = 2,
         embedding_model=None,
         topic_sim_threshold: float = 0.5,
-        storyline_sim_threshold: float = 0.5,
-        storyline_min_hits: int = 1,
-        storyline_granularities: Tuple[str, ...] = ("30sec", "3min"),
+        event_chain_sim_threshold: float = 0.5,
+        event_chain_min_hits: int = 1,
+        event_chain_granularities: Tuple[str, ...] = ("30sec", "3min"),
     ) -> List[dict]:
         """Find chain facts relevant to retrieval results.
 
@@ -188,7 +188,7 @@ class UnifiedMemory:
         Returns list of {"time": str, "fact": str, "label": str} dicts,
         sorted by time.
         """
-        if not self._topic_facts and not self._storylines:
+        if not self._topic_facts and not self._event_chains:
             return []
 
         # Robust pattern matching: case-insensitive, plural (s/es), hyphen/space variants
@@ -228,26 +228,26 @@ class UnifiedMemory:
 
         _topic_coarse_passed = {ent for ent, cnt in topic_hits.items() if cnt >= min_hits}
 
-        # Storyline matching: check which episodes fall into
-        # any step of the same storyline (≥storyline_min_hits step hits)
+        # Event-chain matching: check which episodes fall into
+        # any step of the same event chain (≥event_chain_min_hits step hits)
         # Then filter by query keyword matching against key_entities.
         # Granularities used for the coarse filter are configurable.
-        _storyline_grans = set(storyline_granularities)
-        storyline_step_hits = {}  # storyline_idx → set of step_indices
+        _event_chain_grans = set(event_chain_granularities)
+        event_chain_step_hits = {}  # ec_idx → set of step_indices
         for node, _ in results:
             if node.node_type != NodeType.EPISODE:
                 continue
             gran = node.metadata.get("granularity", "")
-            if gran not in _storyline_grans:
+            if gran not in _event_chain_grans:
                 continue
-            for sl_idx, sl in enumerate(self._storylines):
-                for step_idx, step in enumerate(sl["steps"]):
+            for ec_idx, ec in enumerate(self._event_chains):
+                for step_idx, step in enumerate(ec["steps"]):
                     if step["start_ts"] <= node.start_ts <= step["end_ts"]:
-                        if sl_idx not in storyline_step_hits:
-                            storyline_step_hits[sl_idx] = set()
-                        storyline_step_hits[sl_idx].add(step_idx)
+                        if ec_idx not in event_chain_step_hits:
+                            event_chain_step_hits[ec_idx] = set()
+                        event_chain_step_hits[ec_idx].add(step_idx)
 
-        # Filter: ≥1 step hit + query keyword matches storyline entities
+        # Filter: ≥1 step hit + query keyword matches event-chain key entities
         def _robust_entity_match(entity, text):
             """Match entity in text using robust pattern (case, plural, hyphen)."""
             return bool(_robust_pattern(entity).search(text))
@@ -255,30 +255,30 @@ class UnifiedMemory:
         _stopwords = {'and', 'the', 'for', 'from', 'with', 'at', 'setup', 'coordination',
                       'management', 'handling', 'preparation', 'service', 'based'}
 
-        # Storyline matching: two-tier like topic
+        # Event-chain matching: two-tier like topic
         # Tier 1: key_entities match query → always included (no topk limit)
         # Tier 2: no match → embedding candidate, fill remaining slots
-        keyword_matched_sl = []      # always included
-        _embedding_sl_candidates = set()  # candidates for embedding check
+        keyword_matched_ec = []      # always included
+        _embedding_ec_candidates = set()  # candidates for embedding check
         if query_lower:
-            for sl_idx, step_indices in storyline_step_hits.items():
-                if len(step_indices) < storyline_min_hits:
+            for ec_idx, step_indices in event_chain_step_hits.items():
+                if len(step_indices) < event_chain_min_hits:
                     continue
-                sl = self._storylines[sl_idx]
+                ec = self._event_chains[ec_idx]
                 matched = False
-                for ent in sl.get("key_entities", []):
+                for ent in ec.get("key_entities", []):
                     if _robust_entity_match(ent, query_lower):
                         matched = True
                         break
                 if matched:
-                    keyword_matched_sl.append((sl_idx, len(step_indices)))
+                    keyword_matched_ec.append((ec_idx, len(step_indices)))
                 else:
-                    _embedding_sl_candidates.add(sl_idx)
+                    _embedding_ec_candidates.add(ec_idx)
 
-        relevant_storylines = list(keyword_matched_sl)
-        relevant_storylines.sort(key=lambda x: -x[1])
-        relevant_storylines = relevant_storylines[:max_event_chains]
-        embedding_sl_slots = max(0, max_event_chains - len(relevant_storylines))
+        relevant_event_chains = list(keyword_matched_ec)
+        relevant_event_chains.sort(key=lambda x: -x[1])
+        relevant_event_chains = relevant_event_chains[:max_event_chains]
+        embedding_ec_slots = max(0, max_event_chains - len(relevant_event_chains))
 
         # Topic chains matching
         keyword_matched = []    # entities matched by query keyword
@@ -295,10 +295,10 @@ class UnifiedMemory:
         relevant = relevant[:max_topic_chains]
         embedding_slots = max(0, max_topic_chains - len(relevant))
 
-        # Bug fix: also keep going when only Tier-2 storyline candidates remain,
-        # otherwise embedding-tier-only storyline matches are silently dropped.
+        # Bug fix: also keep going when only Tier-2 event-chain candidates remain,
+        # otherwise embedding-tier-only event-chain matches are silently dropped.
         if (not relevant and not _topic_embedding_set
-                and not relevant_storylines and not _embedding_sl_candidates):
+                and not relevant_event_chains and not _embedding_ec_candidates):
             return []
 
         # Parse query_time for filtering
@@ -379,10 +379,10 @@ class UnifiedMemory:
                     "chain_type": "topic",
                 })
 
-        # Collect step descriptions from relevant storylines (skip if covered)
-        for sl_idx, n_steps in relevant_storylines:
-            sl = self._storylines[sl_idx]
-            for step in sl["steps"]:
+        # Collect step descriptions from relevant event chains (skip if covered)
+        for ec_idx, n_steps in relevant_event_chains:
+            ec = self._event_chains[ec_idx]
+            for step in ec["steps"]:
                 step_ts = step["start_ts"]
                 s_parsed = _ts_to_day_secs(step_ts)
                 if s_parsed is not None:
@@ -425,7 +425,7 @@ class UnifiedMemory:
                         "time": time_str,
                         "end_time": end_time_str,
                         "fact": desc,
-                        "label": sl["name"],
+                        "label": ec["name"],
                         "chain_type": "event",
                     })
 
@@ -538,25 +538,25 @@ class UnifiedMemory:
         all_facts = [f for f in all_facts
                      if f.get("chain_type") != "topic" or f.get("label", "") in _accepted_topics]
 
-        # Storyline Tier 2: embedding check for candidates, fill remaining slots
-        _accepted_storyline_names = set()
-        for sl_idx, _ in keyword_matched_sl:
-            _accepted_storyline_names.add(self._storylines[sl_idx]["name"])
+        # Event-chain Tier 2: embedding check for candidates, fill remaining slots
+        _accepted_event_chain_names = set()
+        for ec_idx, _ in keyword_matched_ec:
+            _accepted_event_chain_names.add(self._event_chains[ec_idx]["name"])
 
-        if _embedding_sl_candidates and embedding_model and query_text and embedding_sl_slots > 0:
-            sl_idx_to_name = {idx: self._storylines[idx]["name"] for idx in _embedding_sl_candidates}
+        if _embedding_ec_candidates and embedding_model and query_text and embedding_ec_slots > 0:
+            ec_idx_to_name = {idx: self._event_chains[idx]["name"] for idx in _embedding_ec_candidates}
 
-            # NOTE: previous version read storyline texts from all_facts (which only
-            # contained Tier-1 storylines), so Tier-2 candidates always had empty
+            # NOTE: previous version read event-chain texts from all_facts (which only
+            # contained Tier-1 chains), so Tier-2 candidates always had empty
             # text → all KEEP/DROP log lines never fired.
-            # Fix: build candidate texts directly from self._storylines step descriptions.
+            # Fix: build candidate texts directly from self._event_chains step descriptions.
             candidate_facts_text = {}
-            for sl_idx in _embedding_sl_candidates:
-                sl_name = sl_idx_to_name[sl_idx]
-                step_texts = [step.get("description", "") for step in self._storylines[sl_idx]["steps"]
+            for ec_idx in _embedding_ec_candidates:
+                ec_name = ec_idx_to_name[ec_idx]
+                step_texts = [step.get("description", "") for step in self._event_chains[ec_idx]["steps"]
                               if step.get("description")]
                 if step_texts:
-                    candidate_facts_text[sl_name] = step_texts
+                    candidate_facts_text[ec_name] = step_texts
 
             if candidate_facts_text:
                 try:
@@ -566,30 +566,30 @@ class UnifiedMemory:
                     embeddings = embedding_model.encode_text(all_texts)
                     query_emb = embeddings[0]
 
-                    scored_sl = []
+                    scored_ec = []
                     for i, lbl in enumerate(labels):
-                        sl_emb = embeddings[i + 1]
-                        cos_sim = float(np.dot(query_emb, sl_emb) /
-                                       (np.linalg.norm(query_emb) * np.linalg.norm(sl_emb) + 1e-8))
-                        if cos_sim >= storyline_sim_threshold:
-                            scored_sl.append((lbl, cos_sim))
-                            logger.info(f"[chain] Storyline embedding: {lbl[:30]} sim={cos_sim:.4f} [KEEP]")
+                        ec_emb = embeddings[i + 1]
+                        cos_sim = float(np.dot(query_emb, ec_emb) /
+                                       (np.linalg.norm(query_emb) * np.linalg.norm(ec_emb) + 1e-8))
+                        if cos_sim >= event_chain_sim_threshold:
+                            scored_ec.append((lbl, cos_sim))
+                            logger.info(f"[chain] Event-chain embedding: {lbl[:30]} sim={cos_sim:.4f} [KEEP]")
                         else:
-                            logger.info(f"[chain] Storyline embedding: {lbl[:30]} sim={cos_sim:.4f} [DROP]")
+                            logger.info(f"[chain] Event-chain embedding: {lbl[:30]} sim={cos_sim:.4f} [DROP]")
 
-                    # Sort by similarity, take top embedding_sl_slots
-                    scored_sl.sort(key=lambda x: -x[1])
-                    name_to_idx = {v: k for k, v in sl_idx_to_name.items()}
-                    for lbl, sim in scored_sl[:embedding_sl_slots]:
-                        _accepted_storyline_names.add(lbl)
+                    # Sort by similarity, take top embedding_ec_slots
+                    scored_ec.sort(key=lambda x: -x[1])
+                    name_to_idx = {v: k for k, v in ec_idx_to_name.items()}
+                    for lbl, sim in scored_ec[:embedding_ec_slots]:
+                        _accepted_event_chain_names.add(lbl)
                         if lbl in name_to_idx:
-                            sl_idx = name_to_idx[lbl]
-                            step_count = len(storyline_step_hits.get(sl_idx, set()))
-                            relevant_storylines.append((sl_idx, step_count))
-                            # Also append this storyline's step facts to all_facts
+                            ec_idx = name_to_idx[lbl]
+                            step_count = len(event_chain_step_hits.get(ec_idx, set()))
+                            relevant_event_chains.append((ec_idx, step_count))
+                            # Also append this event chain's step facts to all_facts
                             # (with the same time + cover filter as Tier-1).
-                            sl = self._storylines[sl_idx]
-                            for step in sl["steps"]:
+                            ec = self._event_chains[ec_idx]
+                            for step in ec["steps"]:
                                 step_ts = step["start_ts"]
                                 s_parsed = _ts_to_day_secs(step_ts)
                                 if s_parsed is not None:
@@ -626,40 +626,40 @@ class UnifiedMemory:
                                         "time": time_str,
                                         "end_time": end_time_str,
                                         "fact": desc,
-                                        "label": sl["name"],
+                                        "label": ec["name"],
                                         "chain_type": "event",
                                     })
 
                 except Exception as e:
-                    logger.warning(f"Storyline embedding fallback failed: {e}")
+                    logger.warning(f"Event-chain embedding fallback failed: {e}")
 
-        # Filter storyline facts to only accepted storylines
+        # Filter event-chain facts to only accepted chains
         all_facts = [f for f in all_facts
-                     if f.get("chain_type") != "event" or f.get("label", "") in _accepted_storyline_names]
+                     if f.get("chain_type") != "event" or f.get("label", "") in _accepted_event_chain_names]
 
         # Re-sort: Tier-2 facts were appended after the initial sort, so resort
         # the whole list to keep facts time-ordered downstream.
         all_facts.sort(key=sort_key)
 
         n_topic = len(relevant)
-        n_storyline = len(relevant_storylines)
+        n_event_chain = len(relevant_event_chains)
         # Accurate Tier-1 vs Tier-2 counts (the previous diff-based formula went
         # negative when keyword_matched got truncated by max_topic_chains).
         topic_tier2_count = sum(1 for (_, e), _ in relevant if e in _embedding_keep_topics)
         topic_tier1_count = n_topic - topic_tier2_count
-        keyword_matched_sl_idx = {idx for idx, _ in keyword_matched_sl}
-        sl_tier1_count = sum(1 for idx, _ in relevant_storylines if idx in keyword_matched_sl_idx)
-        sl_tier2_count = n_storyline - sl_tier1_count
+        keyword_matched_ec_idx = {idx for idx, _ in keyword_matched_ec}
+        ec_tier1_count = sum(1 for idx, _ in relevant_event_chains if idx in keyword_matched_ec_idx)
+        ec_tier2_count = n_event_chain - ec_tier1_count
         facts_per_label = {}
         for f in all_facts:
             lbl = f.get("label", "")
             facts_per_label[lbl] = facts_per_label.get(lbl, 0) + 1
         topic_info = [f'{n}({topic_hits.get(n,0)} hits, {facts_per_label.get(n,0)}f)' for (_, n), _ in relevant[:5]]
-        sl_info = [f'{self._storylines[idx]["name"][:25]}({c} hits, {facts_per_label.get(self._storylines[idx]["name"],0)}f)' for idx, c in relevant_storylines[:5]]
+        ec_info = [f'{self._event_chains[idx]["name"][:25]}({c} hits, {facts_per_label.get(self._event_chains[idx]["name"],0)}f)' for idx, c in relevant_event_chains[:5]]
         logger.info(f"[chain] {n_topic} topics ({topic_tier1_count} keyword, {topic_tier2_count} embedding), "
-                    f"{n_storyline} storylines ({sl_tier1_count} keyword, {sl_tier2_count} embedding), "
+                    f"{n_event_chain} event chains ({ec_tier1_count} keyword, {ec_tier2_count} embedding), "
                     f"{len(all_facts)} facts (skipped {skipped_covered} covered) "
-                    f"({', '.join(topic_info + sl_info)})")
+                    f"({', '.join(topic_info + ec_info)})")
 
         return all_facts
 
@@ -889,7 +889,7 @@ class MultiGraphUnifiedMemory:
         self._memories: Dict[str, UnifiedMemory] = {}  # bid → UnifiedMemory
         # Merged chain data across all broadcasts
         self._topic_facts: Dict[str, list] = {}   # entity → merged facts
-        self._storylines: list = []                # merged storylines
+        self._event_chains: list = []                # merged event chains
         self._chain_mode: Optional[str] = None
 
     def add(self, broadcast_id: str, mem: UnifiedMemory) -> None:
@@ -908,12 +908,12 @@ class MultiGraphUnifiedMemory:
                     self._topic_facts[entity].extend(tagged)
                 else:
                     self._topic_facts[entity] = list(tagged)
-        if mem._storylines:
-            for sl in mem._storylines:
-                sl_copy = dict(sl)
-                if "broadcast_id" not in sl_copy:
-                    sl_copy["broadcast_id"] = broadcast_id
-                self._storylines.append(sl_copy)
+        if mem._event_chains:
+            for ec in mem._event_chains:
+                ec_copy = dict(ec)
+                if "broadcast_id" not in ec_copy:
+                    ec_copy["broadcast_id"] = broadcast_id
+                self._event_chains.append(ec_copy)
         if mem._chain_mode:
             self._chain_mode = mem._chain_mode
 
@@ -969,7 +969,7 @@ class MultiGraphUnifiedMemory:
         # For each video, use its own chain data
         for bid, bid_res in bid_results.items():
             mem = self._memories.get(bid)
-            if mem and (mem._topic_facts or mem._storylines):
+            if mem and (mem._topic_facts or mem._event_chains):
                 facts = mem.get_chain_facts_for_results(bid_res, **kwargs)
                 # Tag facts with broadcast_id
                 for f in facts:
@@ -983,4 +983,4 @@ class MultiGraphUnifiedMemory:
             mem.cleanup()
         self._memories.clear()
         self._topic_facts.clear()
-        self._storylines.clear()
+        self._event_chains.clear()

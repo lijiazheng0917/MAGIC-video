@@ -181,10 +181,10 @@ def load_broadcast_data(
                                chain_mode=chain_mode)
             # Load chain facts if available
             topic_path = os.path.join(mode_dir, "topic_chains.json")
-            story_path = os.path.join(mode_dir, "storyline_step3_enriched.json")
+            event_chain_path = os.path.join(mode_dir, "event_chain_step3_enriched.json")
             um.load(
                 topic_chain_facts_path=topic_path if os.path.exists(topic_path) else None,
-                storyline_path=story_path if os.path.exists(story_path) else None,
+                event_chain_path=event_chain_path if os.path.exists(event_chain_path) else None,
             )
             world_memory.unified_memory = um
         else:
@@ -277,13 +277,13 @@ def main():
     parser.add_argument("--chain-max-topics", type=int, default=2)
     parser.add_argument("--chain-max-events", type=int, default=2)
     parser.add_argument("--chain-topic-sim", type=float, default=0.7)
-    parser.add_argument("--chain-storyline-sim", type=float, default=0.7)
-    parser.add_argument("--chain-storyline-min-hits", type=int, default=1,
-                        help="Minimum storyline step hits required for candidacy (default 1).")
-    parser.add_argument("--chain-storyline-granularities", type=str,
+    parser.add_argument("--chain-event-sim", type=float, default=0.7)
+    parser.add_argument("--chain-event-min-hits", type=int, default=1,
+                        help="Minimum event-chain step hits required for candidacy (default 1).")
+    parser.add_argument("--chain-event-granularities", type=str,
                         default="30sec,3min",
                         help="Comma-separated episode granularities used to "
-                             "detect storyline step hits (default '30sec,3min'). "
+                             "detect event-chain step hits (default '30sec,3min'). "
                              "Add '10min' / '1h' to loosen coarse filter.")
     args = parser.parse_args()
 
@@ -396,11 +396,11 @@ def main():
         chain_dir = os.path.join(args.metadata_dir, "mmlifelong")
         vid_chain_dir = os.path.join(chain_dir, bid, args.caption_mode)
         topic_chain_path = os.path.join(vid_chain_dir, "topic_chains.json")
-        storyline_path = os.path.join(vid_chain_dir, "storyline_step3_enriched.json")
+        event_chain_path = os.path.join(vid_chain_dir, "event_chain_step3_enriched.json")
         if args.chain_mode and not os.path.exists(topic_chain_path):
             topic_chain_path = None
-        if args.chain_mode and not os.path.exists(storyline_path):
-            storyline_path = None
+        if args.chain_mode and not os.path.exists(event_chain_path):
+            event_chain_path = None
 
         world_memory = WorldMemory(
             embedding_model=embedding_model,
@@ -414,7 +414,7 @@ def main():
             cache_dir=os.path.join(args.cache_dir, bid),
             chain_mode=args.chain_mode,
             topic_chain_facts_path=topic_chain_path if args.chain_mode else None,
-            storyline_path=storyline_path if args.chain_mode else None,
+            event_chain_path=event_chain_path if args.chain_mode else None,
         )
 
         # Set QA template for open-ended answers
@@ -434,10 +434,10 @@ def main():
             world_memory.chain_max_topics = args.chain_max_topics
             world_memory.chain_max_events = args.chain_max_events
             world_memory.chain_topic_sim = args.chain_topic_sim
-            world_memory.chain_storyline_sim = args.chain_storyline_sim
-            world_memory.chain_storyline_min_hits = args.chain_storyline_min_hits
-            world_memory.chain_storyline_granularities = tuple(
-                g.strip() for g in args.chain_storyline_granularities.split(",") if g.strip()
+            world_memory.chain_event_sim = args.chain_event_sim
+            world_memory.chain_event_min_hits = args.chain_event_min_hits
+            world_memory.chain_event_granularities = tuple(
+                g.strip() for g in args.chain_event_granularities.split(",") if g.strip()
             )
 
         _log_memory(f"after WorldMemory init (broadcast {bid})")
@@ -592,10 +592,10 @@ def main():
             world_memory.chain_max_topics = args.chain_max_topics
             world_memory.chain_max_events = args.chain_max_events
             world_memory.chain_topic_sim = args.chain_topic_sim
-            world_memory.chain_storyline_sim = args.chain_storyline_sim
-            world_memory.chain_storyline_min_hits = args.chain_storyline_min_hits
-            world_memory.chain_storyline_granularities = tuple(
-                g.strip() for g in args.chain_storyline_granularities.split(",") if g.strip()
+            world_memory.chain_event_sim = args.chain_event_sim
+            world_memory.chain_event_min_hits = args.chain_event_min_hits
+            world_memory.chain_event_granularities = tuple(
+                g.strip() for g in args.chain_event_granularities.split(",") if g.strip()
             )
             world_memory.set_retrieval_top_k(
                 episodic=args.episodic_top_k,

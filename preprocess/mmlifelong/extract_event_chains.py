@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Extract storylines (activity chains) for MM-Lifelong broadcasts.
+Extract event chains (activity chains) for MM-Lifelong broadcasts.
 
 For each video, extracts major activities from 10min captions,
 then identifies recurring or related activities within the broadcast.
 
 Usage:
-    python preprocess/mmlifelong/extract_storylines.py --video-id 4
-    python preprocess/mmlifelong/extract_storylines.py --video-id all
+    python preprocess/mmlifelong/extract_event_chains.py --video-id 4
+    python preprocess/mmlifelong/extract_event_chains.py --video-id all
 """
 
 import json, os, re, sys, argparse, logging, time
@@ -126,7 +126,7 @@ Events:
 {activities}
 """
 
-STEP3_PROMPT = """Storyline: "{chain_name}"
+STEP3_PROMPT = """Event chain: "{chain_name}"
 Time window: {start_time} - {end_time}
 
 Below are 30-second captions from this time window. Extract details ONLY about "{chain_name}".
@@ -183,7 +183,7 @@ def main():
         logger.info(f"Loaded {len(caps_10min)} 10min captions")
 
         # Step 1: Extract activities (chunked to avoid token limits)
-        step1_path = os.path.join(out_dir, "storyline_step1_activities.json")
+        step1_path = os.path.join(out_dir, "event_chain_step1_activities.json")
         if args.resume and os.path.exists(step1_path):
             activities = json.load(open(step1_path))
             logger.info(f"Resuming step 1: {len(activities)} activities loaded")
@@ -213,11 +213,11 @@ def main():
                 logger.warning("  Failed to extract activities")
                 activities = []
 
-        # Step 2: Find storylines (chunk if too many activities)
-        step2_path = os.path.join(out_dir, "storyline_step2_chains.json")
+        # Step 2: Find event chains (chunk if too many activities)
+        step2_path = os.path.join(out_dir, "event_chain_step2_chains.json")
         if args.resume and os.path.exists(step2_path):
-            storylines = json.load(open(step2_path))
-            logger.info(f"Resuming step 2: {len(storylines)} storylines loaded")
+            event_chains = json.load(open(step2_path))
+            logger.info(f"Resuming step 2: {len(event_chains)} event chains loaded")
         else:
             STEP2_CHUNK = 50  # max activities per LLM call
             if len(activities) <= STEP2_CHUNK:
@@ -228,16 +228,16 @@ def main():
                         activities_text += f"  Entities: {', '.join(act['key_entities'])}\n"
 
                 prompt = STEP2_PROMPT.format(activities=activities_text)
-                logger.info(f"Step 2: Finding storylines ({len(activities)} activities)...")
-                storylines = call_llm(client, args.model, prompt, max_tokens=12000)
-                if not storylines:
-                    logger.warning("  Failed to extract storylines")
-                    storylines = []
+                logger.info(f"Step 2: Finding event chains ({len(activities)} activities)...")
+                event_chains = call_llm(client, args.model, prompt, max_tokens=12000)
+                if not event_chains:
+                    logger.warning("  Failed to extract event chains")
+                    event_chains = []
                 else:
-                    logger.info(f"  Found {len(storylines)} storylines")
+                    logger.info(f"  Found {len(event_chains)} event chains")
             else:
-                # Split activities into chunks, find storylines per chunk, then merge
-                storylines = []
+                # Split activities into chunks, find chains per chunk, then merge
+                event_chains = []
                 seen_names = set()
                 for ci in range(0, len(activities), STEP2_CHUNK):
                     chunk = activities[ci:ci + STEP2_CHUNK]
@@ -251,32 +251,32 @@ def main():
                     logger.info(f"Step 2: chunk {ci//STEP2_CHUNK+1} ({len(chunk)} activities)...")
                     result = call_llm(client, args.model, prompt, max_tokens=12000)
                     if isinstance(result, list):
-                        for sl in result:
-                            name = sl.get("name", "")
+                        for ec in result:
+                            name = ec.get("name", "")
                             if name.lower() not in seen_names:
-                                storylines.append(sl)
+                                event_chains.append(ec)
                                 seen_names.add(name.lower())
-                        logger.info(f"  Found {len(result)} storylines in chunk")
+                        logger.info(f"  Found {len(result)} event chains in chunk")
                     else:
                         logger.warning(f"  Step 2 chunk {ci//STEP2_CHUNK+1} failed")
 
-                logger.info(f"Step 2 total: {len(storylines)} storylines (merged)")
+                logger.info(f"Step 2 total: {len(event_chains)} event chains (merged)")
 
-            if storylines:
+            if event_chains:
                 with open(step2_path, 'w') as f:
-                    json.dump(storylines, f, indent=2, ensure_ascii=False)
+                    json.dump(event_chains, f, indent=2, ensure_ascii=False)
             else:
-                storylines = []
+                event_chains = []
 
         # Step 3: Enrich with 30sec captions
-        step3_path = os.path.join(out_dir, "storyline_step3_enriched.json")
+        step3_path = os.path.join(out_dir, "event_chain_step3_enriched.json")
         if args.resume and os.path.exists(step3_path):
             enriched = json.load(open(step3_path))
-            logger.info(f"Resuming step 3: {len(enriched)} enriched storylines loaded")
+            logger.info(f"Resuming step 3: {len(enriched)} enriched event chains loaded")
         else:
             if not os.path.exists(cap_30sec_path):
                 logger.warning(f"No 30sec captions, skipping step 3")
-                enriched = storylines
+                enriched = event_chains
             else:
                 import copy
                 caps_30sec = json.load(open(cap_30sec_path))
@@ -286,8 +286,8 @@ def main():
                 from concurrent.futures import ThreadPoolExecutor, as_completed
                 import threading
 
-                enriched = copy.deepcopy(storylines)
-                total_steps = sum(len(sl.get('steps', [])) for sl in enriched)
+                enriched = copy.deepcopy(event_chains)
+                total_steps = sum(len(ec.get('steps', [])) for ec in enriched)
 
                 def parse_hms(t):
                     parts = t.split(':')
@@ -295,11 +295,11 @@ def main():
                         return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
                     return 0
 
-                # Build all tasks: (sl_idx, step_idx, chain_name, start_time, end_time, matched_caps)
+                # Build all tasks: (ec_idx, step_idx, chain_name, start_time, end_time, matched_caps)
                 tasks = []
-                for sl_idx, sl in enumerate(enriched):
-                    chain_name = sl.get('name', '')
-                    for step_idx, step in enumerate(sl.get('steps', [])):
+                for ec_idx, ec in enumerate(enriched):
+                    chain_name = ec.get('name', '')
+                    for step_idx, step in enumerate(ec.get('steps', [])):
                         st = step.get('start_time', '')
                         et = step.get('end_time', '')
                         start_secs = parse_hms(st)
@@ -313,33 +313,33 @@ def main():
                                 matched_caps.append(f"[{ts}] {c.get('text', '')}")
 
                         if matched_caps:
-                            tasks.append((sl_idx, step_idx, chain_name, st, et, matched_caps))
+                            tasks.append((ec_idx, step_idx, chain_name, st, et, matched_caps))
 
                 logger.info(f"Step 3: Enriching {len(tasks)}/{total_steps} steps with 8 workers")
                 processed = [0]
                 lock = threading.Lock()
 
                 def enrich_one(task):
-                    sl_idx, step_idx, chain_name, st, et, matched_caps = task
+                    ec_idx, step_idx, chain_name, st, et, matched_caps = task
                     captions_text = "\n\n".join(matched_caps)
                     prompt = STEP3_PROMPT.format(
                         chain_name=chain_name, start_time=st, end_time=et,
                         captions_text=captions_text)
                     result = call_llm(client, args.model, prompt, max_tokens=1000)
                     if result and isinstance(result, dict) and result.get('description'):
-                        return sl_idx, step_idx, result['description'], len(matched_caps)
-                    return sl_idx, step_idx, None, len(matched_caps)
+                        return ec_idx, step_idx, result['description'], len(matched_caps)
+                    return ec_idx, step_idx, None, len(matched_caps)
 
                 with ThreadPoolExecutor(max_workers=8) as executor:
                     futures = {executor.submit(enrich_one, t): t for t in tasks}
                     for future in as_completed(futures):
-                        sl_idx, step_idx, desc, n_caps = future.result()
+                        ec_idx, step_idx, desc, n_caps = future.result()
                         with lock:
                             processed[0] += 1
-                            chain_name = enriched[sl_idx]['name']
-                            st = enriched[sl_idx]['steps'][step_idx].get('start_time', '')
+                            chain_name = enriched[ec_idx]['name']
+                            st = enriched[ec_idx]['steps'][step_idx].get('start_time', '')
                             if desc:
-                                enriched[sl_idx]['steps'][step_idx]['description'] = desc
+                                enriched[ec_idx]['steps'][step_idx]['description'] = desc
                                 logger.info(f"  [{processed[0]}/{len(tasks)}] {chain_name} [{st}]: enriched ({n_caps} captions)")
                             else:
                                 logger.info(f"  [{processed[0]}/{len(tasks)}] {chain_name} [{st}]: LLM failed")
@@ -351,8 +351,8 @@ def main():
                 with open(step3_path, 'w') as f:
                     json.dump(enriched, f, indent=2, ensure_ascii=False)
 
-        total_steps = sum(len(sl.get('steps', [])) for sl in enriched)
-        logger.info(f"Video {vid}: {len(enriched)} storylines, {total_steps} steps")
+        total_steps = sum(len(ec.get('steps', [])) for ec in enriched)
+        logger.info(f"Video {vid}: {len(enriched)} event chains, {total_steps} steps")
         logger.info(f"Saved to: {step3_path}")
 
 
