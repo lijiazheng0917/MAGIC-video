@@ -1,5 +1,7 @@
 # MAGIC-Video
 
+[![arXiv](https://img.shields.io/badge/arXiv-2605.08271-b31b1b.svg)](https://arxiv.org/abs/2605.08271)
+
 ## 1. Introduction
 
 **MAGIC-Video** is a training-free framework for ultra-long video reasoning (days to weeks of footage) built around a **M**ultimod**A**l memory **G**raph with **I**nterleaved narrative **C**hain. The **Multimodal Memory Graph (MMG)** unifies episodic captions, named entities, semantic triples, and visual clips into a single heterogeneous graph connected by six typed cross-modal and temporal edges, supporting cross-modal retrieval via a single Personalized PageRank pass. The **Narrative Memory Chain (NMC)** complements bottom-up graph aggregation with a top-down distillation that scans the whole video offline to surface per-entity *topic chains* (entity biographies) and multi-day *event chains* (recurring/multi-step activities) as coherent cross-time threads. At inference time, an agentic loop alternates between `search` and `answer` (capped at 5 search rounds), interleaving graph retrieval with narrative fact injection — covering both the modality and time dimensions of ultra-long video in a single retrieval pipeline. On three ultra-long video benchmarks, MAGIC-Video outperforms the strongest prior agentic systems by **+10.1** points on **EgoLifeQA**, **+7.4** points on **Ego-R1**, and **+5.9** points on **MM-Lifelong**.
@@ -310,7 +312,22 @@ See the paper for ablations, judge-comparison tables, and chain-injection breakd
 
 ---
 
-## 7. Acknowledgments
+## 7. Citation
+
+Paper: [arXiv:2605.08271](https://arxiv.org/abs/2605.08271)
+
+```bibtex
+@article{li2026magic,
+  title  = {Bridging Modalities, Spanning Time: Structured Memory for Ultra-Long Agentic Video Reasoning},
+  author = {Li, Jiazheng and Wu, Chi-Hao and Liu, Yunze and Ding, Kaize and Li, Jundong and Zhang, Chuxu},
+  journal= {arXiv preprint arXiv:2605.08271},
+  year   = {2026}
+}
+```
+
+---
+
+## 8. Acknowledgments
 
 Built on [WorldMM](https://github.com/wgcyeo/WorldMM), [HippoRAG](https://github.com/OSU-NLP-Group/HippoRAG), and [VLM2Vec](https://github.com/TIGER-AI-Lab/VLM2Vec). Datasets: [EgoLife](https://huggingface.co/datasets/lmms-lab/EgoLife) (LMMs-Lab), [Ego-R1](https://huggingface.co/datasets/Ego-R1/Ego-R1-Data), [MM-Lifelong](https://huggingface.co/datasets/CG-Bench/MM-Lifelong) (CG-Bench).
 
