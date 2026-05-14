@@ -1,6 +1,7 @@
 # MAGIC-Video
 
 [![arXiv](https://img.shields.io/badge/arXiv-2605.08271-b31b1b.svg)](https://arxiv.org/abs/2605.08271)
+[![Dataset](https://img.shields.io/badge/🤗-Artifacts-yellow)](https://huggingface.co/datasets/jiazhengli7/magic-video-artifacts)
 
 ## 1. Introduction
 
@@ -74,7 +75,7 @@ All `[GPU]` steps in the paper were run on a single NVIDIA A100 (40 GB).
 
 ### Skipping preprocessing
 
-All `[API]` steps produce JSON artifacts (captions, OpenIE results, semantic triples, topic and event chains). They cost OpenRouter credits and take several hours per subject / video, and because LLM outputs are non-deterministic, re-running them will give slightly different results from ours. To make reproduction both cheap and faithful, we will release the exact artifacts used in the paper on Hugging Face (link TBD). Once downloaded, you only need to run the `[GPU]` steps (visual embeddings + unified graph) and then go straight to evaluation.
+All `[API]` steps produce JSON artifacts (captions, OpenIE results, semantic triples, topic and event chains). They cost OpenRouter credits and take several hours per subject / video, and because LLM outputs are non-deterministic, re-running them will give slightly different results from ours. To make reproduction both cheap and faithful, we release the exact artifacts used in the paper at [`jiazhengli7/magic-video-artifacts`](https://huggingface.co/datasets/jiazhengli7/magic-video-artifacts) (EgoLife `A1_JAKE` and MM-Lifelong). Once downloaded, you only need to run the `[GPU]` steps (visual embeddings + unified graph) and then go straight to evaluation.
 
 In contrast, `[GPU]` steps are deterministic given the same inputs and model weights, so we do **not** ship them — you rebuild them locally with the commands below.
 
@@ -314,7 +315,7 @@ See the paper for ablations, judge-comparison tables, and chain-injection breakd
 
 ## 7. Citation
 
-Paper: [arXiv:2605.08271](https://arxiv.org/abs/2605.08271)
+Paper: [arXiv:2605.08271](https://arxiv.org/abs/2605.08271) · Artifacts: [jiazhengli7/magic-video-artifacts](https://huggingface.co/datasets/jiazhengli7/magic-video-artifacts)
 
 ```bibtex
 @article{li2026magic,
