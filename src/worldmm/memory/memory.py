@@ -96,11 +96,15 @@ class WorldMemory:
     3. Retrieved context is accumulated across rounds
     4. When the agent decides to answer, the QA model uses all accumulated context
     
-    Memory Types:
-    - Episodic: Specific events/actions using HippoRAG for retrieval
-    - Semantic: Entity/relationship knowledge using PPR graph retrieval  
-    - Visual: Scene/setting snapshots using embedding similarity
-    
+    Backends (see retrieval_backend):
+    - "unified_graph" (default): a single cross-modal graph is queried with one
+      PPR pass; the agent does not pick a memory type.
+    - "independent": three separate stores are retrieved and the agent selects a
+      memory type per round:
+        * Episodic: specific events/actions using HippoRAG for retrieval
+        * Semantic: entity/relationship knowledge using PPR graph retrieval
+        * Visual: scene/setting snapshots using embedding similarity
+
     Attributes:
         episodic_memory: EpisodicMemory instance
         semantic_memory: SemanticMemory instance
@@ -289,7 +293,7 @@ class WorldMemory:
         are indexed up to the query time.
 
         Args:
-            until_time: Timestamp (int DHHMMSSFF for EgoLife, or float seconds/inf for Video-MME)
+            until_time: Timestamp (int DHHMMSSFF for EgoLife, or float seconds/inf for MM-Lifelong)
         """
         if self.indexed_time >= until_time:
             logger.debug(f"Already indexed up to {self.indexed_time}, skipping")
@@ -450,7 +454,7 @@ Retrieved:
             m = re.match(r'\[DAY(\d+)\s+(\d{1,2}):(\d{2})', text)
             if m:
                 return int(m.group(1)) * 100000 + int(m.group(2)) * 3600 + int(m.group(3)) * 60
-            # MM-Lifelong / Video-MME: [00:05:30 - ...]
+            # MM-Lifelong: [00:05:30 - ...]
             m = re.match(r'\[(\d{1,2}):(\d{2}):(\d{2})', text)
             if m:
                 return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
@@ -518,8 +522,6 @@ Retrieved:
 
         if len(broadcast_ids) > 1:
             # Cross-broadcast: group everything by video, sorted by video ID (= time order)
-            # Include semantic triples in each video's section
-            all_items = non_semantic + semantic_items
             # Also collect broadcast_ids from semantic items
             all_bids = set(broadcast_ids)
             for _, item in semantic_items:
@@ -1209,7 +1211,7 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
                         m = re.match(r'\[DAY(\d+)\s+(\d{1,2}):(\d{2})', item.content)
                         if m:
                             return (0, int(m.group(1)) * 100000 + int(m.group(2)) * 3600 + int(m.group(3)) * 60)
-                        # MM-Lifelong / Video-MME: [00:05:30 - ...]
+                        # MM-Lifelong: [00:05:30 - ...]
                         m = re.match(r'\[(\d{1,2}):(\d{2}):(\d{2})', item.content)
                         if m:
                             return (0, int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)))
@@ -1515,11 +1517,7 @@ Step 2 (only if search): Pick one memory type (episodic/semantic/visual) and for
         except ImportError:
             pass
         logger.info("Memory cleanup complete")
-    
-    def get_indexed_time(self) -> str:
-        """Get the current indexed time as human-readable string."""
-        return transform_timestamp(str(self.indexed_time))
-    
+
     def set_retrieval_top_k(
         self,
         episodic: Optional[int] = None,

@@ -2,7 +2,11 @@
 """
 Offline script to build and serialise the unified multimodal graph.
 
-Reads from already-computed preprocessing outputs:
+Supports --dataset egolife / mmlifelong; the input paths below are the EgoLife
+layout. MM-Lifelong reads from its own per-video metadata directories (see
+_resolve_mmlifelong_paths).
+
+Reads from already-computed preprocessing outputs (EgoLife example):
   - data/EgoLife/EgoLifeCap/{PERSON}/A1_JAKE_{30sec,3min,10min,1h}.json
   - output/metadata/episodic_memory/{PERSON}/openie_results_*.json
   - output/metadata/semantic_memory/{PERSON}/semantic_consolidation_results_*.json
@@ -59,69 +63,6 @@ def _resolve_egolife_paths(args, person):
     }
 
 
-def _resolve_videomme_paths(args, video_id):
-    """Resolve all input/output paths for Video-MME dataset.
-
-    Uses --caption-mode to select mode-specific subdirectory.
-    """
-    base = os.path.join(args.output_dir, "videomme", video_id)
-    mode = getattr(args, 'caption_mode', 'srt')
-    mode_dir = os.path.join(base, mode)
-    cap_dir = os.path.join(mode_dir, "captions")
-    out_dir = os.path.join(mode_dir, "unified_graph")
-
-    granularities = ["30sec", "3min"]
-    caption_files = {}
-    for gran in granularities:
-        path = os.path.join(cap_dir, f"{video_id}_{gran}.json")
-        if os.path.exists(path):
-            caption_files[gran] = path
-
-    if not caption_files:
-        raise FileNotFoundError(f"No caption files found in {cap_dir}")
-
-    return {
-        "caption_files":  caption_files,
-        "openie_path":    os.path.join(mode_dir, "episodic_memory", "openie_results.json"),
-        "sem_path":       os.path.join(mode_dir, "semantic_memory", "semantic_consolidation_results.json"),
-        "vis_emb_path":   os.path.join(base, "visual_memory", "visual_embeddings.pkl"),
-        "out_dir":        out_dir,
-        "granularities":  granularities,
-    }
-
-
-def _resolve_lvbench_paths(args, video_id):
-    """Resolve all input/output paths for LVBench dataset.
-
-    Uses --caption-mode to select mode-specific subdirectory for caption-dependent
-    files (captions, episodic, semantic, graph), while visual embeddings are shared.
-    """
-    base = os.path.join(args.output_dir, "lvbench", video_id)
-    mode = getattr(args, 'caption_mode', 'asr')
-    mode_dir = os.path.join(base, mode)
-    cap_dir = os.path.join(mode_dir, "captions")
-    out_dir = os.path.join(mode_dir, "unified_graph")
-
-    granularities = ["30sec", "3min"]
-    caption_files = {}
-    for gran in granularities:
-        path = os.path.join(cap_dir, f"{video_id}_{gran}.json")
-        if os.path.exists(path):
-            caption_files[gran] = path
-
-    if not caption_files:
-        raise FileNotFoundError(f"No caption files found in {cap_dir}")
-
-    return {
-        "caption_files":  caption_files,
-        "openie_path":    os.path.join(mode_dir, "episodic_memory", "openie_results.json"),
-        "sem_path":       os.path.join(mode_dir, "semantic_memory", "semantic_consolidation_results.json"),
-        "vis_emb_path":   os.path.join(base, "visual_memory", "visual_embeddings.pkl"),
-        "out_dir":        out_dir,
-        "granularities":  granularities,
-    }
-
-
 def _resolve_mmlifelong_paths(args, video_id):
     """Resolve all input/output paths for MM-Lifelong dataset."""
     base = os.path.join(args.output_dir, "mmlifelong", video_id)
@@ -153,10 +94,10 @@ def _resolve_mmlifelong_paths(args, video_id):
 def main():
     parser = argparse.ArgumentParser(description="Build unified multimodal graph")
     parser.add_argument("--subject", default="A1_JAKE", help="Subject ID (EgoLife)")
-    parser.add_argument("--dataset", default="egolife", choices=["egolife", "videomme", "lvbench", "mmlifelong"],
-                        help="Dataset: 'egolife' (default), 'videomme', or 'lvbench'")
+    parser.add_argument("--dataset", default="egolife", choices=["egolife", "mmlifelong"],
+                        help="Dataset: 'egolife' (default) or 'mmlifelong'")
     parser.add_argument("--video-id", default=None,
-                        help="Video ID. Required when --dataset=videomme or lvbench")
+                        help="Video ID. Required when --dataset=mmlifelong")
     parser.add_argument("--caption-mode", default="merge", choices=["asr", "vlm", "merge"],
                         help="Caption mode (determines subdirectory under metadata; default: merge).")
     parser.add_argument("--data-dir",   default="data/EgoLife",    help="Data root")
@@ -171,19 +112,7 @@ def main():
     args = parser.parse_args()
 
     # ------------------------------------------------------------------ resolve paths
-    if args.dataset == "videomme":
-        if not args.video_id:
-            parser.error("--video-id is required when --dataset=videomme")
-        person = "narrator"
-        paths = _resolve_videomme_paths(args, args.video_id)
-        label = f"Video-MME/{args.video_id}"
-    elif args.dataset == "lvbench":
-        if not args.video_id:
-            parser.error("--video-id is required when --dataset=lvbench")
-        person = "narrator"
-        paths = _resolve_lvbench_paths(args, args.video_id)
-        label = f"LVBench/{args.video_id}"
-    elif args.dataset == "mmlifelong":
+    if args.dataset == "mmlifelong":
         if not args.video_id:
             parser.error("--video-id is required when --dataset=mmlifelong")
         person = "ishowspeed"

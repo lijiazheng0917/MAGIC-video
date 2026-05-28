@@ -16,12 +16,11 @@ import os
 import sys
 import json
 import re
-import glob
 import base64
 import argparse
 import time
 from io import BytesIO
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -159,12 +158,10 @@ def sample_frames_uniform(query_ts: int, num_frames: int, max_size: int = 512) -
     n = len(clips)
     if n <= num_frames:
         selected = clips
-        selected_indices = list(range(n))
     else:
         import numpy as np
         indices = np.linspace(0, n - 1, num_frames, dtype=int)
         selected = [clips[i] for i in indices]
-        selected_indices = indices.tolist()
 
     frames = []
     for clip_path in selected:

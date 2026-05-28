@@ -3,7 +3,7 @@ Node and edge dataclass definitions for the Unified Multimodal Graph.
 
 Supports two timestamp formats:
   - EgoLife: integer DHHMMSSFF (e.g. 111094300 = DAY1 11:09:43)
-  - Video-MME: float seconds (e.g. 30.0 = 0:00:30)
+  - MM-Lifelong: float seconds (e.g. 30.0 = 0:00:30)
 
 Per-graph consistency: each graph uses one format throughout.  The two
 formats never mix within a single graph.
@@ -38,13 +38,13 @@ class GraphNode:
 
     Timestamp format depends on the dataset:
       - EgoLife:   integer DHHMMSSFF  (e.g. 111094300)
-      - Video-MME: float seconds      (e.g. 30.0)
+      - MM-Lifelong: float seconds      (e.g. 30.0)
     """
     id:        str
     node_type: NodeType
     text:      str          # Natural-language description; used to compute text_embedding
 
-    # Time bounds.  Type is int (EgoLife DHHMMSSFF) or float (Video-MME seconds).
+    # Time bounds.  Type is int (EgoLife DHHMMSSFF) or float (MM-Lifelong seconds).
     # EntityNode:    start_ts = first_seen_ts,  end_ts = last_seen_ts
     # SemanticNode:  start_ts = end_ts = consolidation_timestamp
     # Episode/Visual: start_ts, end_ts from caption JSON
@@ -99,7 +99,7 @@ def _is_seconds_ts(ts) -> bool:
 def _fmt_ts(ts) -> str:
     """Format a timestamp for human-readable display.
 
-    Handles both EgoLife DHHMMSSFF ints and Video-MME float seconds.
+    Handles both EgoLife DHHMMSSFF ints and MM-Lifelong float seconds.
     """
     if _is_seconds_ts(ts):
         total_sec = int(ts)
@@ -154,11 +154,11 @@ def make_visual_id(date_or_sec, start_time: Optional[str] = None) -> str:
 
     Two calling conventions:
       - EgoLife:   make_visual_id("DAY1", "11094300")
-      - Video-MME: make_visual_id(30.0)   (start seconds, no start_time arg)
+      - MM-Lifelong: make_visual_id(30.0)   (start seconds, no start_time arg)
     """
     if start_time is not None:
         return f"vis_{date_or_sec}_{start_time}"
-    # Video-MME: use integer seconds for a clean ID
+    # MM-Lifelong: use integer seconds for a clean ID
     return f"vis_{int(date_or_sec)}"
 
 
@@ -169,12 +169,12 @@ def make_visual_id(date_or_sec, start_time: Optional[str] = None) -> str:
 def caption_to_timestamps(entry: dict) -> tuple:
     """Convert a caption JSON entry to (start_ts, end_ts).
 
-    For Video-MME (entry has ``start_sec``): returns ``(float, float)`` in seconds.
+    For MM-Lifelong (entry has ``start_sec``): returns ``(float, float)`` in seconds.
     For EgoLife  (entry has ``date/start_time/end_time``): returns ``(int, int)``
     in DHHMMSSFF format (unchanged from the original code path).
     """
     if "start_sec" in entry:
-        # Video-MME format
+        # MM-Lifelong format
         return float(entry["start_sec"]), float(entry["end_sec"])
     # EgoLife format (unchanged)
     date = str(entry.get("date", "DAY1"))

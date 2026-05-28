@@ -18,11 +18,9 @@ Output:
 """
 
 import json
-import os
 import argparse
 import numpy as np
 from pathlib import Path
-from collections import defaultdict
 from PIL import Image
 from tqdm import tqdm
 

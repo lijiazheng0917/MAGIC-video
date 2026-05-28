@@ -5,7 +5,6 @@ Step 2: Cross-day merge — identify event chains that span multiple days
 Step 3: Detail extraction — for each event-chain step, extract facts from 30sec captions
 """
 import json, os, re, sys, argparse, logging, time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
@@ -173,14 +172,6 @@ def main():
             logger.warning(f"  {date}: failed to extract")
 
     logger.info(f"Step 1 done: {sum(len(v) for v in daily_activities.values())} total activities")
-
-    # Step 2a: Per-day event grouping
-    step2a_path = os.path.join(out_dir, "step2a_daily_events.json")
-    if args.resume and os.path.exists(step2a_path):
-        daily_events = json.load(open(step2a_path))
-        logger.info(f"Resuming step 2a: {len(daily_events)} days loaded")
-    else:
-        daily_events = {}
 
     # Step 2: Find cross-time event chains from daily activities
     step2_path = os.path.join(out_dir, "step2_event_chains.json")

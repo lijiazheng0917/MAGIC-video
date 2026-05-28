@@ -1,8 +1,8 @@
 prompt_template = [
     {
         "role": "system",
-        "content": """You are an expert assistant that helps filter and select relevant video captions based on a given query. "
-            "Your task is to analyze the retrieved video captions and determine which ones are most relevant to answer the question."""
+        "content": """You are an expert assistant that helps filter and select relevant video captions based on a given query.
+Your task is to analyze the retrieved video captions and determine which ones are most relevant to answer the question."""
     },
     {
         "role": "user",

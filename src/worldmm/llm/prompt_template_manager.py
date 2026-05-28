@@ -1,10 +1,9 @@
 import os
-import asyncio
 import logging
 import re
 from string import Template
 from typing import Dict, List, Union, Any, Optional
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 import importlib
 
 logger = logging.getLogger(__name__)
@@ -122,9 +121,6 @@ class PromptTemplateManager:
                 logger.error(f"Missing variable in chat history template '{name}': {e}")
                 raise ValueError(f"Missing variable in chat history template '{name}': {e}")
     
-    def sync_render(self, name: str, **kwargs) -> Union[str, List[Dict[str, Any]]]:
-        return asyncio.run(self.render(name, **kwargs))
-
     def list_template_names(self) -> List[str]:
         """
         List all available template names.

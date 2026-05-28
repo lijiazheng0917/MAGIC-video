@@ -373,18 +373,3 @@ class SemanticMemory:
         self.triple_to_entities = {}
         logger.info("Index reset - graph and embeddings cleared")
     
-    def get_indexed_time(self) -> str:
-        """Get the current indexed time boundary as human-readable string."""
-        return _transform_timestamp(str(self.indexed_time))
-    
-    def get_indexed_timestamp(self) -> str:
-        """Get the specific timestamp that was indexed as human-readable string."""
-        return _transform_timestamp(str(self.indexed_timestamp)) if self.indexed_timestamp > 0 else "Not indexed"
-    
-    def get_triple_by_id(self, triple_id: str) -> Optional[SemanticTripleEntry]:
-        """Get a triple entry by its ID."""
-        return self.triple_id_to_entry.get(triple_id)
-    
-    def get_indexed_count(self) -> int:
-        """Get the number of indexed triples."""
-        return len(self.indexed_entries)

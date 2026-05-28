@@ -20,11 +20,9 @@ import re
 import base64
 import argparse
 import time
-import math
 from io import BytesIO
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     from openai import OpenAI
@@ -216,6 +214,8 @@ def sample_captions_for_question(
             break
         lines.append(line)
 
+    return "\n".join(lines)
+
 
 def get_captions_for_frames(question_data: dict, num_frames: int) -> str:
     """Get captions corresponding to uniformly sampled frame positions.
@@ -255,8 +255,6 @@ def get_captions_for_frames(question_data: dict, num_frames: int) -> str:
                 if c.get("start_sec", 0) <= sec < c.get("end_sec", 0):
                     lines.append(f"[{c['start_sec']:.0f}s-{c['end_sec']:.0f}s] {c['text']}")
                     break
-
-    return "\n".join(lines)
 
     return "\n".join(lines)
 

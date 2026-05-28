@@ -14,7 +14,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tqdm import tqdm
 from worldmm.llm import LLMModel
-import os
 
 # Use OpenRouter if environment variable is set
 use_openrouter = os.getenv("USE_OPENROUTER", "false").lower() == "true"

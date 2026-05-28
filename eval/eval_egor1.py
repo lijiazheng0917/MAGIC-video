@@ -27,7 +27,6 @@ from worldmm.memory import WorldMemory, QAResult
 
 from _common import (
     load_json,
-    extract_choice_letter,
     evaluate_prediction,
     resolve_semantic_results_path,
     find_30s_segment,

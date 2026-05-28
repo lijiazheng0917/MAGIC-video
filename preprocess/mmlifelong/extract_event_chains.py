@@ -11,7 +11,6 @@ Usage:
 """
 
 import json, os, re, sys, argparse, logging, time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
@@ -282,7 +281,6 @@ def main():
                 caps_30sec = json.load(open(cap_30sec_path))
                 caps_30sec.sort(key=lambda x: x.get('start_sec', 0))
 
-                import copy
                 from concurrent.futures import ThreadPoolExecutor, as_completed
                 import threading
 

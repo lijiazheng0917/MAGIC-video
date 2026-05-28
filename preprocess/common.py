@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Shared preprocessing utilities for all benchmarks (VideoMME, LVBench, MM-Lifelong).
+Shared preprocessing utilities for the MM-Lifelong benchmark.
 
 Contains functions for:
   - LLM/VLM creation

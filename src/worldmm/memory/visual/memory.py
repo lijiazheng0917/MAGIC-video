@@ -29,7 +29,7 @@ class VideoClipEntry:
     end_time: str
     date: str
     embedding: Optional[np.ndarray] = None  # Precomputed embedding
-    start_sec: Optional[float] = None  # Float seconds (Video-MME/LVBench/MM-Lifelong)
+    start_sec: Optional[float] = None  # Float seconds (MM-Lifelong)
     end_sec: Optional[float] = None
 
     @property
@@ -37,9 +37,9 @@ class VideoClipEntry:
         """Convert start and end times to integer/float format.
 
         For EgoLife: returns int DHHMMSSFF (day + time.zfill(8)).
-        For Video-MME/LVBench/MM-Lifelong: returns float seconds.
+        For MM-Lifelong: returns float seconds.
         """
-        # Float-seconds path (Video-MME, LVBench, MM-Lifelong)
+        # Float-seconds path (MM-Lifelong)
         if self.start_sec is not None and self.end_sec is not None:
             return self.start_sec, self.end_sec
         # EgoLife path (DHHMMSSFF)
@@ -210,7 +210,7 @@ class VisualMemory:
 
         Supports two formats:
           - EgoLife: keys start_time, end_time, date, video_path
-          - Video-MME/LVBench/MM-Lifelong: keys start_sec, end_sec, video_path
+          - MM-Lifelong: keys start_sec, end_sec, video_path
         """
         matched = 0
         for idx, entry in enumerate(data):
@@ -219,7 +219,7 @@ class VisualMemory:
             start_sec = entry.get("start_sec")
             end_sec = entry.get("end_sec")
 
-            # Try embedding key: "video_path:start-end" (Video-MME/LVBench/MM-Lifelong)
+            # Try embedding key: "video_path:start-end" (MM-Lifelong)
             embedding = None
             if start_sec is not None and end_sec is not None:
                 emb_key = f"{video_path}:{start_sec}-{end_sec}"
@@ -642,17 +642,6 @@ class VisualMemory:
         logger.debug(f"Extracted {len(frames)} frames from {video_path}")
         return frames
     
-    def get_clip_by_id(self, clip_id: str) -> Optional[VideoClipEntry]:
-        """Get a clip entry by its ID."""
-        return self.clip_id_to_entry.get(clip_id)
-    
-    def get_clip_by_video_path(self, video_path: str) -> Optional[VideoClipEntry]:
-        """Get a clip entry by its video path."""
-        for clip in self.clips:
-            if clip.video_path == video_path:
-                return clip
-        return None
-    
     def cleanup(self) -> None:
         """Explicitly free GPU memory."""
         if self.embeddings is not None:
@@ -668,19 +657,3 @@ class VisualMemory:
         self.indexed_time = 0
         self.index_to_pos = {}
         logger.info("Index reset - embeddings cleared")
-    
-    def get_indexed_time(self) -> str:
-        """Get the current indexed time boundary as human-readable string."""
-        return _transform_timestamp(str(self.indexed_time))
-    
-    def get_clips_count(self) -> int:
-        """Get the total number of loaded clips."""
-        return len(self.clips)
-    
-    def get_indexed_count(self) -> int:
-        """Get the number of indexed clips."""
-        return len(self.indexed_entries)
-    
-    def get_clips_with_embeddings_count(self) -> int:
-        """Get the number of clips that have precomputed embeddings."""
-        return sum(1 for clip in self.clips if clip.embedding is not None)

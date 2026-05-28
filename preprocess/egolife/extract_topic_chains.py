@@ -71,7 +71,7 @@ def format_timestamp(ts_str, date=""):
     """Convert timestamp like 17450000 to 'DAY1 17:45'."""
     try:
         s = str(ts_str).zfill(8)
-        h, m, sec = int(s[0:2]), int(s[2:4]), int(s[4:6])
+        h, m = int(s[0:2]), int(s[2:4])
         prefix = f"{date} " if date else ""
         return f"{prefix}{h:02d}:{m:02d}"
     except (ValueError, IndexError):

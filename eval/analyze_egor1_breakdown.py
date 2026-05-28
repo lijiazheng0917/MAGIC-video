@@ -21,7 +21,7 @@ import sys
 from collections import defaultdict
 
 MODEL_SUBDIR = "openai_gpt-oss-120b_qwen_qwen3.5-flash-02-23"
-# Filenames vary across eval_egor1.py versions. Match by glob + "_cm_facts"
+# Filenames vary across eval_egor1.py versions. Match by glob + "_cm_"
 # suffix to distinguish Chain from UG.
 FILE_GLOB = "egor1_eval_A1_JAKE_*.json"
 

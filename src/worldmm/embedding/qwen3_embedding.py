@@ -44,7 +44,3 @@ class Qwen3EmbeddingModel:
         
         embeddings = self.model.encode(texts, batch_size=batch_size)
         return embeddings
-    
-    def encode(self, content: Union[str, List[str]], **kwargs) -> np.ndarray:
-        """Universal encode method for text"""
-        return self.encode_text(content, **kwargs)

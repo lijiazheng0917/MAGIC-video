@@ -28,7 +28,7 @@ class CaptionEntry:
     
     @property
     def is_float_time(self) -> bool:
-        """True if timestamps are float seconds (Video-MME/LVBench), not EgoLife DHHMMSSFF."""
+        """True if timestamps are float seconds (MM-Lifelong), not EgoLife DHHMMSSFF."""
         try:
             float(self.start_time)
             return '.' in self.start_time or int(float(self.start_time)) < 1_000_000
@@ -188,7 +188,7 @@ class EpisodicMemory:
         """Process raw caption data and create CaptionEntry objects."""
         for idx, entry in enumerate(data):
             caption_id = f"{granularity}_{idx}"
-            # Support both EgoLife (start_time/end_time) and Video-MME/LVBench (start_sec/end_sec)
+            # Support both EgoLife (start_time/end_time) and MM-Lifelong (start_sec/end_sec)
             start_time = str(entry.get("start_time", ""))
             end_time = str(entry.get("end_time", ""))
             if not start_time and "start_sec" in entry:
@@ -486,10 +486,3 @@ Return ONLY a JSON array of caption IDs in order of relevance (most relevant fir
         self.indexed_time = 0
         logger.info("Index reset - all HippoRAG instances and indexed entries cleared")
     
-    def get_indexed_time(self) -> str:
-        """Get the current indexed time boundary."""
-        return _transform_timestamp(str(self.indexed_time))
-    
-    def get_caption_by_id(self, caption_id: str) -> Optional[CaptionEntry]:
-        """Get a caption entry by its ID."""
-        return self.caption_id_to_entry.get(caption_id)

@@ -7,7 +7,7 @@ import argparse
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from tqdm import tqdm
 
@@ -16,15 +16,12 @@ logging.basicConfig(level=logging.INFO)
 
 from worldmm.embedding import EmbeddingModel
 from worldmm.llm import LLMModel, PromptTemplateManager
-from worldmm.memory import WorldMemory, QAResult, transform_timestamp
+from worldmm.memory import WorldMemory, QAResult
 
 from _common import (
     load_json,
     resolve_semantic_results_path,
-    normalize,
-    extract_choice_letter,
     evaluate_prediction,
-    find_30s_segment,
     parse_target_time,
 )
 

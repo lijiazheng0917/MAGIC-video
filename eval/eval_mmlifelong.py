@@ -9,12 +9,16 @@ For each broadcast:
   3. Score with LLM-as-judge
   4. Reset memory and move to the next broadcast
 
-Key differences from eval_lvbench.py:
+Key differences from eval_egolife.py:
   - Open-ended answers (NOT multiple choice A/B/C/D)
   - LLM-as-judge evaluation (0-5 scale, smoothed to 0/0.5/1)
   - Questions grouped by broadcast (video_id in clue_interval)
   - 4 granularity levels: 30sec, 3min, 10min, 1h
-  - Phase 1: only single-broadcast questions (92.3% of val set)
+
+Coverage: the full validation set is evaluated. Single-broadcast questions
+(575/623, 92.3%) run in the per-broadcast loop; cross-broadcast questions
+(48/623, 7.7%) run in the multi-graph block when --retrieval-backend is
+unified_graph (the default).
 """
 
 import argparse
@@ -23,7 +27,6 @@ import logging
 import os
 import re
 import sys
-from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from tqdm import tqdm
@@ -204,19 +207,6 @@ def get_broadcast_ids(question: dict) -> set:
     for clue in question.get("clue_interval", []):
         ids.add(clue["video_id"])
     return ids
-
-
-def filter_single_broadcast_questions(
-    questions: List[dict],
-    available_broadcasts: set,
-) -> List[dict]:
-    """Filter to questions that reference a single available broadcast."""
-    filtered = []
-    for q in questions:
-        bids = get_broadcast_ids(q)
-        if len(bids) == 1 and bids.issubset(available_broadcasts):
-            filtered.append(q)
-    return filtered
 
 
 def filter_evaluable_questions(
@@ -604,7 +594,6 @@ def main():
             )
 
             # Load all broadcasts in this set, build multi-graph
-            from worldmm.memory.unified import UnifiedMemory
             from worldmm.memory.unified.memory import MultiGraphUnifiedMemory
             multi_mem = MultiGraphUnifiedMemory()
             load_ok = True

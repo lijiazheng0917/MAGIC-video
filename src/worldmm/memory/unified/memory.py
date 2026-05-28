@@ -11,7 +11,7 @@ import os
 import re
 import threading
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
@@ -51,16 +51,17 @@ class UnifiedMemory:
         ----------
         embedding_model        : EmbeddingModel
         graph_path             : Path to the serialised MultimodalGraph pkl file.
-        chain_mode             : Reserved for future chain injection method, or None.
+        chain_mode             : Chain-injection mode, propagated to WorldMemory
+                                 (which performs the actual injection), or None.
         """
         self.embedding_model = embedding_model
         self.graph_path      = graph_path
 
         self._full_graph:     Optional[MultimodalGraph] = None  # loaded once
         self._active_graph:   Optional[MultimodalGraph] = None  # time-filtered subgraph
-        self._indexed_time    = 0  # int (EgoLife) or float (Video-MME)
+        self._indexed_time    = 0  # int (EgoLife) or float (MM-Lifelong)
 
-        self._chain_mode             = chain_mode  # reserved for future chain injection
+        self._chain_mode             = chain_mode  # propagated to WorldMemory for chain injection
         self._event_chains             = []   # cross-time event chains
 
     # ------------------------------------------------------------------
@@ -75,10 +76,10 @@ class UnifiedMemory:
         """Load the serialised graph and chain facts from disk.
 
         Args:
-            event_facts_path: Legacy event facts for episode metadata injection.
+            event_facts_path: Per-episode facts injected into episode-node metadata.
             topic_chain_facts_path: Topic chain who-did-what facts (topic_chains_filtered.json).
             event_chain_path: Cross-time event chains (step3_enriched_chains.json).
-            **kwargs: Accepts and ignores legacy params.
+            **kwargs: Accepts and ignores unrecognised params for forward compatibility.
         """
         logger.info(f"Loading unified graph from {self.graph_path}…")
         self._full_graph = MultimodalGraph.load(self.graph_path)
@@ -118,7 +119,7 @@ class UnifiedMemory:
             raw = json.load(open(event_chain_path))
             def _parse_hms(t, as_seconds=False):
                 """Parse 'HH:MM:SS' or 'HH:MM'. If as_seconds, return total seconds
-                (MM-Lifelong / Video-MME float-second nodes); otherwise return
+                (MM-Lifelong float-second nodes); otherwise return
                 DHHMMSSFF time-component (HH*1e6+MM*1e4+SS*100) for EgoLife nodes."""
                 m = re.match(r'(\d{1,2}):(\d{2}):?(\d{2})?', t)
                 if not m:
@@ -311,7 +312,7 @@ class UnifiedMemory:
 
         # Helpers to parse timestamps in both formats:
         #   EgoLife: DHHMMSSFF int (e.g. 111094300 = DAY1 11:09:43.00)
-        #   MM-Lifelong / Video-MME: float seconds within a single video (e.g. 630.0)
+        #   MM-Lifelong: float seconds within a single video (e.g. 630.0)
         def _ts_to_day_secs(ts):
             s = str(int(ts))
             if len(s) >= 7:
@@ -394,13 +395,12 @@ class UnifiedMemory:
                         continue
 
                 # Format time from step. EgoLife steps carry "DAY*" → step_ts is
-                # DHHMMSSFF; MML/Video-MME steps have empty day → step_ts is total
+                # DHHMMSSFF; MML steps have empty day → step_ts is total
                 # seconds (post _parse_hms fix).
                 day = step.get("day", "")
                 st = step_ts
                 et = step.get("end_ts", step_ts)
                 if day:
-                    d = int(st) // 100000000
                     remainder = int(st) % 100000000
                     h = remainder // 1000000
                     m = (remainder % 1000000) // 10000
@@ -431,7 +431,7 @@ class UnifiedMemory:
 
         # Sort by time. Handles both formats:
         #   - EgoLife: "DAY1 11:09:43"
-        #   - MM-Lifelong / Video-MME: "00:10:30" (relative seconds within a video)
+        #   - MM-Lifelong: "00:10:30" (relative seconds within a video)
         def sort_key(f):
             t = f.get("time", "")
             m = re.match(r'DAY(\d+)\s+(\d{1,2}):(\d{2}):?(\d{2})?', t)
@@ -734,7 +734,6 @@ class UnifiedMemory:
             q_emb = q_emb.cpu().numpy()
         if len(q_emb.shape) > 1:
             q_emb = q_emb[0]
-        self._last_query_embedding = q_emb
 
         with _embed_lock:
             results = cross_modal_retrieve(
@@ -916,18 +915,6 @@ class MultiGraphUnifiedMemory:
                 self._event_chains.append(ec_copy)
         if mem._chain_mode:
             self._chain_mode = mem._chain_mode
-
-    def has(self, broadcast_id: str) -> bool:
-        return broadcast_id in self._memories
-
-    @property
-    def broadcast_ids(self) -> List[str]:
-        return list(self._memories.keys())
-
-    def load(self) -> None:
-        for mem in self._memories.values():
-            if mem._full_graph is None:
-                mem.load()
 
     def index(self, until_time) -> None:
         for mem in self._memories.values():

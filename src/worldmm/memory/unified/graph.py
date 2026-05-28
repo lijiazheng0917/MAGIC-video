@@ -15,7 +15,6 @@ from typing import Dict, List, Optional, Set, Tuple
 import igraph as ig
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from .nodes import (
     GraphNode, GraphEdge, NodeType, EdgeType,
@@ -109,7 +108,7 @@ class MultimodalGraph:
                     "video_path":  entry.get("video_path"),
                 }
                 if "start_sec" in entry:
-                    # Video-MME format
+                    # MM-Lifelong format
                     meta["start_sec"] = float(entry["start_sec"])
                     meta["end_sec"]   = float(entry["end_sec"])
                 else:
@@ -174,9 +173,9 @@ class MultimodalGraph:
         Build VisualClipNodes from 30sec caption data and precomputed visual embeddings.
         Also builds CO_CLIP edges linking each VisualClipNode ↔ its EpisodeNode(30sec).
 
-        caption_30sec:     list of dicts from caption JSON (EgoLife or Video-MME format)
+        caption_30sec:     list of dicts from caption JSON (EgoLife or MM-Lifelong format)
         visual_embeddings: Dict[key, np.ndarray] from visual_embeddings.pkl
-                           Key is video_path for EgoLife, or "video_path:start-end" for Video-MME.
+                           Key is video_path for EgoLife, or "video_path:start-end" for MM-Lifelong.
         """
         added = 0
         for entry in caption_30sec:
@@ -187,7 +186,7 @@ class MultimodalGraph:
             start_ts, end_ts = caption_to_timestamps(entry)
 
             if "start_sec" in entry:
-                # Video-MME format
+                # MM-Lifelong format
                 vid = make_visual_id(entry["start_sec"])
                 emb_key = f"{video_path}:{entry['start_sec']}-{entry['end_sec']}"
                 vis_emb = visual_embeddings.get(emb_key)
