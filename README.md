@@ -94,10 +94,11 @@ hf download lmms-lab/EgoLife --repo-type=dataset --local-dir data/EgoLife
 ### 3.2 Preprocess captions
 
 ```bash
-# [API] Translate dense captions (CN → EN)
-python data/EgoLife/utils/translate_densecap.py
+# [API] Translate dense captions (CN → EN); defaults to openai/gpt-4o-mini,
+# override with --model or the TRANSLATION_MODEL env var
+python preprocess/egolife/translate_densecap.py
 # [Local] Align translated captions with transcripts
-python data/EgoLife/utils/generate_sync.py
+python preprocess/egolife/generate_sync.py
 ```
 
 ### 3.3 Extract memory features
